@@ -93,19 +93,26 @@ class Config:
     def snmp_argumente(self, ip):
         """Kommandozeilen-Argumente für snmpget/snmpbulkwalk gegen diese IP —
         Standardwerte aus [snmp], überschrieben durch einen etwaigen
-        Ausnahme-Abschnitt [snmp:IP] (z. B. der S3300 mit SHA-512/AES)."""
+        Ausnahme-Abschnitt [snmp:IP] (z. B. der S3300 mit SHA-512/AES).
+
+        Mit `version = 2c` + `community = …` im Ausnahme-Abschnitt wird das
+        Gerät stattdessen per SNMPv2c abgefragt — für Geräte, die kein
+        brauchbares v3 können (ältere Smart-Switches, WC7500). Niemals die
+        Admin-Kopplung solcher Geräte nutzen!"""
         werte = dict(self.ini["snmp"])
         ausnahme = f"snmp:{ip}"
         if ausnahme in self.ini:
             werte.update(dict(self.ini[ausnahme]))
+        allgemein = ["-t", werte.get("timeout", "2"),
+                     "-r", werte.get("retries", "1"), "-On"]
+        if werte.get("version", "3") == "2c":
+            return ["-v2c", "-c", werte["community"]] + allgemein
         return [
             "-v3", "-l", "authPriv",
             "-u", werte["user"],
             "-a", werte["auth_protocol"], "-A", werte["auth_password"],
             "-x", werte["priv_protocol"], "-X", werte["priv_password"],
-            "-t", werte.get("timeout", "2"), "-r", werte.get("retries", "1"),
-            "-On",
-        ]
+        ] + allgemein
 
     @property
     def seed_ips(self):

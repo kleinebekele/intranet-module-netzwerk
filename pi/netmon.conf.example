@@ -26,6 +26,13 @@ retries = 1
 auth_protocol = SHA-512
 priv_protocol = AES
 
+# Geräte ohne brauchbares SNMPv3 (ältere Smart-Switches, deren v3 fest am
+# admin-Konto hängt; WLAN-Controller) per v2c mit EIGENER Read-Only-Community
+# anbinden — nie die admin-Kopplung nutzen, nie "public" lassen:
+# [snmp:192.168.0.233]
+# version = 2c
+# community = HIER-DIE-COMMUNITY
+
 [discovery]
 # Einstiegspunkt(e) der rekursiven Suche, kommagetrennt. Ein erreichbarer
 # Switch genügt — alles Weitere findet der Collector über LLDP selbst.
