@@ -236,8 +236,10 @@ def node_abfragen(cfg, ip, verbose):
         # NICHT am ifType: alte M4200-Firmware meldet linklose Ports als
         # "other" statt Ethernet. LAGs (bis zu 128 Platzhalter je Switch)
         # nur, wenn tatsächlich in Betrieb; CPU-/VLAN-Interfaces gar nicht.
+        # Zwei Kriterien, weil keines allein überall gilt: der S3300 nennt
+        # seine Ports nicht "0/1" (aber typisiert sie sauber als Ethernet).
         name = werte.get("name", "")
-        ist_physisch = bool(PHYS_PORT_RE.match(name))
+        ist_physisch = bool(PHYS_PORT_RE.match(name)) or werte.get("typ") == 6
         ist_lag = werte.get("typ") == 161 or name.lower().startswith("lag")
         if not ist_physisch and not (ist_lag and werte.get("oper") == 1):
             continue
