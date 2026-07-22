@@ -1,0 +1,52 @@
+# /etc/netmon/netmon.conf — Konfiguration des netmon-Collectors (Phase 2).
+#
+# WICHTIG: Diese Datei enthält Zugangsdaten. Nach dem Anlegen:
+#     sudo chown root:root /etc/netmon/netmon.conf
+#     sudo chmod 600 /etc/netmon/netmon.conf
+#
+# Die Werte für [mssql] stehen bereits in /usr/local/sbin/netscan.sh — einfach
+# dieselben übernehmen. Die SNMP-Werte entsprechen ~/.snmp/snmp.conf.
+
+[snmp]
+# SNMPv3-Standardzugang, wie er auf den Switches eingerichtet ist
+# (Benutzer netmon, Read-Only, authPriv).
+user = netmon
+auth_protocol = SHA
+auth_password = HIER-AUTH-PASSWORT
+priv_protocol = DES
+priv_password = HIER-PRIV-PASSWORT
+
+# Sekunden Wartezeit und Wiederholungen je SNMP-Anfrage.
+timeout = 2
+retries = 1
+
+# Je-Host-Ausnahmen als eigener Abschnitt [snmp:IP] — nur die abweichenden
+# Schlüssel angeben, der Rest kommt aus [snmp]. Beispiel S3300 (SlaveSwitch):
+[snmp:192.168.0.184]
+auth_protocol = SHA-512
+priv_protocol = AES
+
+[discovery]
+# Einstiegspunkt(e) der rekursiven Suche, kommagetrennt. Ein erreichbarer
+# Switch genügt — alles Weitere findet der Collector über LLDP selbst.
+seed_ips = 192.168.0.180
+
+# Nach wie vielen Läufen ohne Antwort ein aktiver Switch als "stumm" gilt
+# (3 Läufe × 5 Minuten = 15 Minuten, passt zur Offline-Logik des Moduls).
+stumm_nach_fehlversuchen = 3
+
+[mssql]
+# Zielserver — Werte wie in netscan.sh. `server` ist das, was dort bei
+# freebcp/tsql hinter -S bzw. -H steht (IP oder freetds.conf-Eintrag).
+server = 192.168.0.2
+port = 2302
+user = HIER-DB-USER
+password = HIER-DB-PASSWORT
+database = LINEAR
+schema = Ekkon3
+
+[collector]
+# Arbeitsverzeichnis (Zählerstände zwischen zwei Läufen, CSV-Zwischendateien).
+state_dir = /var/lib/netmon
+# Wo schema_phase2.sql und merge_phase2.sql liegen.
+sql_dir = /usr/local/share/netmon
