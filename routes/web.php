@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Intranet\Modules\Netzwerk\Http\Controllers\GeraeteController;
+use Intranet\Modules\Netzwerk\Http\Controllers\KarteController;
 
 /*
  | Routen des Netzwerk-Moduls.
@@ -19,5 +20,8 @@ Route::middleware(['web', 'auth'])
     ->prefix('modules/netzwerk')
     ->name('module.netzwerk.')
     ->group(function (): void {
-        Route::get('/', [GeraeteController::class, 'index'])->name('index');
+        // Die Karte ist die Startseite des Moduls (paramloser .index = Anker
+        // fürs Rollen-Gating), die Geräteliste eine Unterseite.
+        Route::get('/', [KarteController::class, 'index'])->name('index');
+        Route::get('/geraete', [GeraeteController::class, 'index'])->name('geraete');
     });

@@ -10,6 +10,6 @@ class GeraeteController extends Controller
 {
     public function index(GeraeteListe $liste): View
     {
-        return view('netzwerk::index', $liste->geraete());
+        return view('netzwerk::geraete', $liste->geraete());
     }
 }

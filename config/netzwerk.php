@@ -24,6 +24,13 @@ return [
     'offline_ab_minuten' => (int) env('NETZWERK_OFFLINE_AB_MINUTEN', 15),
 
     /*
+     * NUR für die lokale Entwicklung: Mit NETZWERK_DEMO=true zeigt die Karte
+     * erfundene Beispieldaten statt der MSSQL-Quelle (die aus der Entwicklungs-
+     * umgebung meist nicht erreichbar ist). Niemals auf einem Server setzen.
+     */
+    'demo' => (bool) env('NETZWERK_DEMO', false),
+
+    /*
      * Die MSSQL-Quelle, in die der Collector (Raspberry Pi) schreibt. ZWEI WEGE –
      * die installierte PHP-Erweiterung entscheidet, welcher geht:
      *
