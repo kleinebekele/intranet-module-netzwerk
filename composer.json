@@ -1,0 +1,27 @@
+{
+    "name": "do1emu/module-netzwerk",
+    "description": "Netzwerk-Modul für die modulare Intranet-Plattform: Inventar und Karte des lokalen Netzwerks, erhoben von einem externen Collector (z. B. Raspberry Pi), gelesen aus einer MSSQL-Datenbank.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "intranet", "modul", "netzwerk", "snmp", "inventar"],
+    "authors": [
+        {
+            "name": "do1emu"
+        }
+    ],
+    "require": {
+        "php": "^8.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "Intranet\\Modules\\Netzwerk\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Intranet\\Modules\\Netzwerk\\NetzwerkServiceProvider"
+            ]
+        }
+    }
+}
