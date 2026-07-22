@@ -231,6 +231,10 @@ def node_abfragen(cfg, ip, verbose):
     for index, werte in interfaces.items():
         if werte.get("typ") not in PORT_TYPEN:
             continue
+        # Netgear legt für JEDE mögliche Link-Aggregation ein Interface an
+        # (128 Stück beim M4300) — nur tatsächlich aktive LAGs aufnehmen.
+        if werte.get("typ") == 161 and werte.get("oper") != 1:
+            continue
         node["ports"][index] = {
             "name": werte.get("name", ""),
             "admin": STATUS_TEXT.get(werte.get("admin"), ""),

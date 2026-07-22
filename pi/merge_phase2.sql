@@ -5,6 +5,9 @@
 -- Grundregeln (siehe ODBC-/freebcp-Leerstring-Falle):
 --  * freebcp liefert Leerfelder als '' — deshalb überall NULLIF(...,'').
 --  * Vorhandene Werte werden nie durch Leeres überschrieben (COALESCE).
+--  * Kein TRY_CONVERT — der Linear-Server ist zu alt dafür (Msg 195).
+--    Klassisches CONVERT reicht: die Werte schreibt der Collector selbst
+--    und liefert immer saubere Zahlen bzw. Leerstrings.
 
 USE [__DB__];
 GO
@@ -47,19 +50,19 @@ MERGE __SCHEMA__.network_ports AS ziel
 USING (
     SELECT
         n.id AS node_id,
-        TRY_CONVERT(int, s.ifIndex)                        AS ifIndex,
-        NULLIF(s.name, '')                                 AS name,
-        NULLIF(s.operStatus, '')                           AS operStatus,
-        NULLIF(s.adminStatus, '')                          AS adminStatus,
-        TRY_CONVERT(int,       NULLIF(s.speedMbit, ''))    AS speedMbit,
-        TRY_CONVERT(bigint,    NULLIF(s.inOctets, ''))     AS inOctets,
-        TRY_CONVERT(bigint,    NULLIF(s.outOctets, ''))    AS outOctets,
-        TRY_CONVERT(datetime2, NULLIF(s.zaehlerStand, '')) AS zaehlerStand,
-        TRY_CONVERT(bigint,    NULLIF(s.inBps, ''))        AS inBps,
-        TRY_CONVERT(bigint,    NULLIF(s.outBps, ''))       AS outBps
+        CONVERT(int, NULLIF(s.ifIndex, ''))                 AS ifIndex,
+        NULLIF(s.name, '')                                  AS name,
+        NULLIF(s.operStatus, '')                            AS operStatus,
+        NULLIF(s.adminStatus, '')                           AS adminStatus,
+        CONVERT(int,    NULLIF(s.speedMbit, ''))            AS speedMbit,
+        CONVERT(bigint, NULLIF(s.inOctets, ''))             AS inOctets,
+        CONVERT(bigint, NULLIF(s.outOctets, ''))            AS outOctets,
+        CONVERT(datetime2, NULLIF(s.zaehlerStand, ''), 120) AS zaehlerStand,
+        CONVERT(bigint, NULLIF(s.inBps, ''))                AS inBps,
+        CONVERT(bigint, NULLIF(s.outBps, ''))               AS outBps
     FROM __SCHEMA__.network_ports_stage s
     JOIN __SCHEMA__.network_nodes n ON n.matchKey = s.node_matchKey
-    WHERE TRY_CONVERT(int, s.ifIndex) IS NOT NULL
+    WHERE NULLIF(s.ifIndex, '') IS NOT NULL
 ) AS quelle
 ON ziel.node_id = quelle.node_id AND ziel.ifIndex = quelle.ifIndex
 WHEN MATCHED THEN UPDATE SET
