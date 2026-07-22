@@ -71,6 +71,9 @@ STATUS_TEXT = {1: "up", 2: "down", 3: "testing", 4: "unknown",
 
 PORT_TYPEN = {6, 161}  # physisches Ethernet + Link Aggregation
 
+# Namensschema physischer Ports bei Netgear: "0/1", gestapelt "1/0/1"
+PHYS_PORT_RE = re.compile(r'^\d+/\d+(/\d+)?$')
+
 
 def log(text):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {text}", flush=True)
@@ -229,11 +232,14 @@ def node_abfragen(cfg, ip, verbose):
                 eintrag[feld] = wert_text(typ, roh)
 
     for index, werte in interfaces.items():
-        if werte.get("typ") not in PORT_TYPEN:
-            continue
-        # Netgear legt für JEDE mögliche Link-Aggregation ein Interface an
-        # (128 Stück beim M4300) — nur tatsächlich aktive LAGs aufnehmen.
-        if werte.get("typ") == 161 and werte.get("oper") != 1:
+        # Physische Ports erkennt man am Namen ("0/1", gestapelt "1/0/1") —
+        # NICHT am ifType: alte M4200-Firmware meldet linklose Ports als
+        # "other" statt Ethernet. LAGs (bis zu 128 Platzhalter je Switch)
+        # nur, wenn tatsächlich in Betrieb; CPU-/VLAN-Interfaces gar nicht.
+        name = werte.get("name", "")
+        ist_physisch = bool(PHYS_PORT_RE.match(name))
+        ist_lag = werte.get("typ") == 161 or name.lower().startswith("lag")
+        if not ist_physisch and not (ist_lag and werte.get("oper") == 1):
             continue
         node["ports"][index] = {
             "name": werte.get("name", ""),
