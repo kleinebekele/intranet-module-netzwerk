@@ -283,10 +283,21 @@ def node_abfragen(cfg, ip, verbose):
 
 
 def nachbar_faehigkeiten(nachbar):
-    """(istBridge, istAp) aus der LLDP-Capabilities-Bitmaske."""
-    oktetten = nachbar.get("capabilities") or b""
-    erstes = oktetten[0] if oktetten else 0
-    return bool(erstes & 0x20), bool(erstes & 0x10)
+    """(istBridge, istAp) aus der LLDP-Capabilities-Bitmaske.
+
+    Netgear liefert die beiden Oktetten in vertauschter Reihenfolge
+    ("00 28" statt "28 00") — deshalb alle Oktetten zusammen-ODERn, dann ist
+    die Byte-Reihenfolge egal (Bridge 0x20 und WLAN-AP 0x10 kollidieren in
+    keiner der beiden Lesarten mit anderen Bits)."""
+    oktetten = nachbar.get("capabilities")
+    if oktetten is None:
+        # Spalte fehlt ganz: eine mitgesendete Management-IP ist dann das
+        # beste Indiz für ein Infrastruktur-Gerät.
+        return bool(nachbar.get("mgmtIp")), False
+    kombiniert = 0
+    for byte in oktetten:
+        kombiniert |= byte
+    return bool(kombiniert & 0x20), bool(kombiniert & 0x10)
 
 
 def nachbar_matchkey(nachbar):
