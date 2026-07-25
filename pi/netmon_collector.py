@@ -373,6 +373,35 @@ def nachbar_matchkey(nachbar):
     return ""
 
 
+# -------------------------------------------------- WC7500-WLAN (Phase 3) ---
+# Spalten der beiden Tabellen im Netgear-Enterprise-Baum, am echten Gerät
+# ausgemessen (--wlan-erkunden, 2026-07-25; eine MIB liegt nicht vor).
+# Zeilen-Index beider Tabellen: <Spalte>.6.<6 MAC-Oktetten dezimal>.
+WLAN_TABELLEN = {
+    "aps":     (".1.3.6.1.4.1.4526.100.8.6.3.1.1",
+                {2: "ip", 8: "name", 9: "modell", 14: "standort", 17: "status"}),
+    "clients": (".1.3.6.1.4.1.4526.100.8.6.4.1.1",
+                {2: "ip", 4: "apName", 5: "apIp", 8: "ssid"}),
+}
+
+
+def wlan_tabelle(cfg, ip, name, verbose):
+    """Eine WC7500-Tabelle einlesen: Liste von Dicts, je Zeile die MAC aus
+    dem Index plus die interessanten Spalten."""
+    basis, spalten = WLAN_TABELLEN[name]
+    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_argumente(ip), ip, [basis], verbose)
+    eintraege = {}
+    for oid, typ, roh in zeilen or []:
+        rest = oid[len(basis) + 1:].split(".")
+        if len(rest) != 8 or rest[1] != "6" or not rest[0].isdigit():
+            continue
+        mac = ":".join(f"{int(x):02x}" for x in rest[2:8])
+        feld = spalten.get(int(rest[0]))
+        if feld is not None:
+            eintraege.setdefault(mac, {"mac": mac})[feld] = wert_text(typ, roh)
+    return list(eintraege.values())
+
+
 # ----------------------------------------------------- OPNsense (Phase 4) ---
 MAC_RE = re.compile(r'^[0-9a-f]{2}(:[0-9a-f]{2}){5}$')
 
@@ -694,7 +723,7 @@ def sammellauf(cfg, verbose):
             if ":" in kandidat and not kandidat.startswith("ip:"):
                 node_macs.add(kandidat)
 
-    zuordnung = {}  # mac -> (macs_am_port, node_key, port_name)
+    fdb_lookup = {}  # mac -> (macs_am_port, node_key, port_name), ALLE MACs
     for key, daten in ergebnisse.items():
         uplinks = set()
         for nachbar in daten["nachbarn"]:
@@ -712,18 +741,19 @@ def sammellauf(cfg, verbose):
             if if_index in uplinks or if_index not in daten["ports"]:
                 continue
             port_name = daten["ports"][if_index]["name"] or f"Port {if_index}"
-            for mac in macs - node_macs:
+            for mac in macs:
                 eintrag = (len(macs), key, port_name)
-                if mac not in zuordnung or eintrag < zuordnung[mac]:
-                    zuordnung[mac] = eintrag
+                if mac not in fdb_lookup or eintrag < fdb_lookup[mac]:
+                    fdb_lookup[mac] = eintrag
 
-    fdb_csv = [[key, port_name, mac]
-               for mac, (_anzahl, key, port_name) in sorted(zuordnung.items())]
+    # Geräte-Zuordnung = alles außer der Infrastruktur selbst; deren MACs
+    # bleiben in fdb_lookup und liefern die Kanten (Firewall, APs).
+    zuordnung = {m: e for m, e in fdb_lookup.items() if m not in node_macs}
 
     # 3c) Phase 4 — OPNsense: ARP über alle Netze + DNS-Namen (Cache im
     #     State, 1 h). Die Firewall wird ein eigener Node; ihre Kante zum
     #     Switch liefert die FDB (der Port, an dem ihre MAC gelernt wurde).
-    arp_csv, fw_link = [], None
+    arp_csv, extra_links = [], []
     if cfg.opnsense is not None:
         arp = arp_einlesen(cfg, verbose)
         dns_cache = state.setdefault("dns", {})
@@ -750,9 +780,57 @@ def sammellauf(cfg, verbose):
         gesehen.add(fw_key)
 
         fw_mac = lokale_arp_mac(fw_ip)
-        if fw_mac and fw_mac in zuordnung:
-            _anzahl, sw_key, port_name = zuordnung[fw_mac]
-            fw_link = [sw_key, port_name, fw_key, "", "", ""]
+        if fw_mac and fw_mac in fdb_lookup:
+            _anzahl, sw_key, port_name = fdb_lookup[fw_mac]
+            if sw_key != fw_key:
+                extra_links.append([sw_key, port_name, fw_key, "", "", ""])
+
+    # 3d) WC7500: verwaltete APs als Nodes (Kante zum Switch aus der FDB) und
+    #     die eingebuchten Clients als WLAN-Zuordnung. Client-MACs fliegen aus
+    #     der FDB-Zuordnung — der Switch "lernt" sie am AP-Port, aber gemeint
+    #     ist: das Gerät hängt am AP.
+    wlan_csv, wlan_macs = [], set()
+    wlan_cfg = cfg.ini["wlan"] if "wlan" in cfg.ini else None
+    if wlan_cfg is not None and wlan_cfg.get("controller_ip"):
+        controller = wlan_cfg["controller_ip"]
+        aps = wlan_tabelle(cfg, controller, "aps", verbose)
+        clients = wlan_tabelle(cfg, controller, "clients", verbose)
+        for ap in aps:
+            verbunden = ap.get("status", "") == "Connected"
+            key = next((k for k, n in nodes.items()
+                        if k == ap["mac"] or (ap.get("ip") and n.get("ip") == ap["ip"])),
+                       None)
+            if key is None:
+                key = ap["mac"]
+                nodes[key] = {"ip": "", "art": "ap", "status": "aktiv", "name": "",
+                              "modell": "", "firmware": "", "standort": "",
+                              "fehlversuche": 0}
+            node = nodes[key]
+            node.update({"art": "ap",
+                         "status": "aktiv" if verbunden else "stumm",
+                         "ip": ap.get("ip") or node.get("ip", ""),
+                         "name": ap.get("name") or node.get("name", ""),
+                         "modell": ap.get("modell") or node.get("modell", ""),
+                         "standort": ap.get("standort") or node.get("standort", "")})
+            if verbunden:
+                gesehen.add(key)
+            treffer = fdb_lookup.get(ap["mac"])
+            if treffer and treffer[1] != key:
+                extra_links.append([treffer[1], treffer[2], key, "", "", ""])
+        for client in clients:
+            if not client.get("apIp"):
+                continue
+            wlan_macs.add(client["mac"])
+            wlan_csv.append([client["mac"], client["apIp"],
+                             client.get("apName", ""), client.get("ssid", "")])
+            if client.get("ip"):   # MAC<->IP der Clients kennt nur der Controller
+                arp_csv.append([client["mac"], client["ip"], ""])
+        if verbose:
+            log(f"  WC7500: {len(aps)} APs, {len(clients)} Clients")
+
+    fdb_csv = [[key, port_name, mac]
+               for mac, (_anzahl, key, port_name) in sorted(zuordnung.items())
+               if mac not in wlan_macs]
 
     # 4) CSV-Zeilen bauen
     nodes_csv, ports_csv, links_csv = [], [], []
@@ -791,8 +869,11 @@ def sammellauf(cfg, verbose):
                         if nachbar.get("chassisSubtype") == 7 else nachbar.get("sysName", ""))
                 links_csv.append([key, von_port, "", nachbar.get("portId", ""),
                                   mac, name])
-    if fw_link:
-        links_csv.append(fw_link)
+    for link in extra_links:   # Firewall-/AP-Kanten aus der FDB
+        paar = frozenset((link[0], link[2]))
+        if paar not in kanten_gesehen:
+            kanten_gesehen.add(paar)
+            links_csv.append(link)
 
     # 5) Hochladen: Staging leeren -> freebcp -> MERGE
     csv_dir = os.path.join(cfg.state_dir, "csv")
@@ -803,7 +884,8 @@ def sammellauf(cfg, verbose):
                                 f"TRUNCATE TABLE {schema}.network_ports_stage;\n"
                                 f"TRUNCATE TABLE {schema}.network_links_stage;\n"
                                 f"TRUNCATE TABLE {schema}.network_fdb_stage;\n"
-                                f"TRUNCATE TABLE {schema}.network_arp_stage;",
+                                f"TRUNCATE TABLE {schema}.network_arp_stage;\n"
+                                f"TRUNCATE TABLE {schema}.network_wlan_stage;",
                            "Staging leeren"):
         return 1
 
@@ -811,7 +893,8 @@ def sammellauf(cfg, verbose):
                             ("network_ports_stage", ports_csv),
                             ("network_links_stage", links_csv),
                             ("network_fdb_stage", fdb_csv),
-                            ("network_arp_stage", arp_csv)):
+                            ("network_arp_stage", arp_csv),
+                            ("network_wlan_stage", wlan_csv)):
         pfad = os.path.join(csv_dir, tabelle + ".csv")
         csv_schreiben(pfad, zeilen)
         if zeilen and not freebcp_hochladen(cfg, tabelle, pfad):
@@ -830,7 +913,8 @@ def sammellauf(cfg, verbose):
     state_sichern(cfg, state)
     log(f"Lauf fertig: {len(ergebnisse)} Switches abgefragt, "
         f"{len(nodes)} Nodes gesamt, {len(ports_csv)} Ports, {len(links_csv)} Kanten, "
-        f"{len(fdb_csv)} Geräte-Zuordnungen, {len(arp_csv)} ARP-Einträge.")
+        f"{len(fdb_csv)} Geräte-Zuordnungen, {len(arp_csv)} ARP-Einträge, "
+        f"{len(wlan_csv)} WLAN-Clients.")
     return 0
 
 

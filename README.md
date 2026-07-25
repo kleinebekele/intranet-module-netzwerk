@@ -62,8 +62,8 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 
 1. ✅ Geräte-Inventar
 2. ✅ Netzwerkkarte aus LLDP-Daten (Topologie-Baum, Discovery unbekannter Switches)
-3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) – Spalte „Anschluss" in der Geräteliste;
-   WLAN (Controller/APs) in Arbeit
+3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) und WLAN (WC7500: APs als Karten-Knoten,
+   Clients mit „AP + SSID") – Spalte „Anschluss" in der Geräteliste
 4. ✅ OPNsense-ARP + DNS-Namen (MACs/Namen über alle Netze, Firewall auf der Karte)
 5. Traffic-Statistiken
 

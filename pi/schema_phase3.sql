@@ -29,3 +29,14 @@ CREATE TABLE __SCHEMA__.network_fdb_stage (
     mac           NVARCHAR(20)  NULL
 );
 GO
+
+-- Staging für die WLAN-Zuordnungen (WC7500): je Zeile "Client-MAC x ist an
+-- AP y (SSID z) eingebucht". Der AP wird über seine IP dem Node zugeordnet.
+IF OBJECT_ID('__SCHEMA__.network_wlan_stage', 'U') IS NULL
+CREATE TABLE __SCHEMA__.network_wlan_stage (
+    mac     NVARCHAR(20)  NULL,
+    ap_ip   NVARCHAR(45)  NULL,
+    ap_name NVARCHAR(160) NULL,
+    ssid    NVARCHAR(64)  NULL
+);
+GO

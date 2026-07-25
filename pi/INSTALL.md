@@ -93,9 +93,18 @@ schweigt, behält seine letzte Zuordnung — `zugeordnet_am` sagt, von wann sie
 stammt. Zuordnen lässt sich nur, was eine MAC hat (praktisch: das lokale
 `.0`-Netz; geroutete Netze kommen mit Phase 4/ARP).
 
-`--wlan-erkunden` walkt den Enterprise-Baum des WLAN-Controllers (Abschnitt
-`[wlan]` in der netmon.conf) und zeigt die gefundenen Tabellen — Einmal-Werkzeug
-zur OID-Suche für die AP-/Client-Erfassung.
+**WLAN (WC7500):** Mit `controller_ip` im `[wlan]`-Abschnitt (plus dessen
+v2c-Community als `[snmp:IP]`-Abschnitt) liest jeder Lauf die AP- und die
+Client-Tabelle des Controllers: Die verwalteten APs werden Nodes (Name, IP,
+Modell, Standort, Status; Kante zum Switch aus der FDB — der Port, an dem die
+LAN-MAC des AP gelernt wurde), und eingebuchte Clients bekommen statt des
+Switch-Ports ihre WLAN-Zuordnung „AP + SSID" (die gewinnt gegen die FDB, denn
+der Switch lernt Client-MACs nur stellvertretend am AP-Port).
+
+`--wlan-erkunden [OID]` walkt den Enterprise-Baum des Controllers und zeigt die
+Tabellen gruppiert (mit OID-Argument: spaltenweise) — Werkzeug, mit dem die
+Spaltenbelegung am echten Gerät ausgemessen wurde (2026-07-25); nützlich, falls
+je ein anderes Controller-Modell die Struktur ändert.
 
 ## Phase 4: OPNsense-ARP + DNS-Namen
 
