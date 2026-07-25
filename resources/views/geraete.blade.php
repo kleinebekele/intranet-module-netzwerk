@@ -61,7 +61,11 @@
                                             @if ($g->anschluss)
                                                 <span class="inline-flex items-center gap-1.5">
                                                     <x-module-icon :name="$g->anschluss->via === 'wlan' ? 'wifi' : 'network'" class="text-base text-gray-400" />
-                                                    {{ $g->anschluss->text }}
+                                                    @if ($g->anschluss->node_id !== null)
+                                                        <a href="{{ route('module.netzwerk.knoten', $g->anschluss->node_id) }}" class="hover:underline">{{ $g->anschluss->text }}</a>
+                                                    @else
+                                                        {{ $g->anschluss->text }}
+                                                    @endif
                                                 </span>
                                             @else
                                                 <span class="text-gray-400">—</span>

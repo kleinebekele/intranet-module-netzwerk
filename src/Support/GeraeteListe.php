@@ -102,7 +102,7 @@ class GeraeteListe
             $rows = DB::connection(Netzwerk::connection())->select(
                 sprintf(
                     'SELECT d.id, d.port_name, d.verbunden_via, d.ssid, d.zugeordnet_am,
-                            n.name AS node_name, n.ip AS node_ip
+                            n.id AS node_id, n.name AS node_name, n.ip AS node_ip
                      FROM %1$s.network_devices d
                      JOIN %1$s.network_nodes n ON n.id = d.node_id',
                     Netzwerk::schema(),
@@ -127,6 +127,7 @@ class GeraeteListe
             $anschluesse[(int) $r->id] = (object) [
                 'text' => $text,
                 'via' => $via,
+                'node_id' => (int) $r->node_id,
                 'stand' => $stand !== null ? Carbon::parse($stand) : null,
             ];
         }

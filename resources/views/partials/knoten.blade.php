@@ -25,7 +25,7 @@
 
         <div class="flex items-center gap-2 flex-wrap">
             <x-module-icon :name="$icon" class="text-xl text-gray-500" />
-            <span class="font-semibold text-gray-800">{{ $knoten->name ?? $knoten->ip ?? 'unbenannt' }}</span>
+            <a href="{{ route('module.netzwerk.knoten', $knoten->id) }}" class="font-semibold text-gray-800 hover:underline">{{ $knoten->name ?? $knoten->ip ?? 'unbenannt' }}</a>
             @if ($knoten->status === 'entdeckt')
                 <span class="text-xs font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">entdeckt – noch nicht eingebunden</span>
             @elseif (! $knoten->online)

@@ -5,8 +5,11 @@ lokalen Netzwerks** – welche Geräte es gibt, wo sie hängen, ob sie online si
 
 **Seiten:** *Karte* (Topologie-Baum aus LLDP-Daten: Switches mit Portanzahl,
 aktueller Rate, Fremd-Nachbarn und Redundanz-Querverbindungen; neu entdeckte,
-noch nicht abfragbare Geräte erscheinen amber mit Einbindungs-Anleitung) und
-*Geräte* (Endgeräte-Inventar aus dem Ping-Scan, je Netzsegment).
+noch nicht abfragbare Geräte erscheinen amber mit Einbindungs-Anleitung),
+*Geräte* (Endgeräte-Inventar aus dem Ping-Scan, je Netzsegment, mit Spalte
+„Anschluss") und je Knoten eine **Detailseite** (Portleiste mit Status/Speed/
+Rate/Uplinks, angeschlossene Geräte je Port, WLAN-Clients bei APs, Nachbarn) –
+verlinkt aus Karte und Geräteliste.
 
 Das Modul **liest nur**. Erhoben werden die Daten von einem externen Collector
 (bei uns: ein Raspberry Pi im Netz, der per nmap und SNMP scannt) und in eine

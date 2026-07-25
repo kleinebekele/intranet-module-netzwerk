@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Intranet\Modules\Netzwerk\Http\Controllers\GeraeteController;
 use Intranet\Modules\Netzwerk\Http\Controllers\KarteController;
+use Intranet\Modules\Netzwerk\Http\Controllers\KnotenController;
 
 /*
  | Routen des Netzwerk-Moduls.
@@ -24,4 +25,5 @@ Route::middleware(['web', 'auth'])
         // fürs Rollen-Gating), die Geräteliste eine Unterseite.
         Route::get('/', [KarteController::class, 'index'])->name('index');
         Route::get('/geraete', [GeraeteController::class, 'index'])->name('geraete');
+        Route::get('/knoten/{id}', [KnotenController::class, 'show'])->whereNumber('id')->name('knoten');
     });
