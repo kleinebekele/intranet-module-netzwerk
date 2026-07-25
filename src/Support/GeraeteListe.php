@@ -23,6 +23,10 @@ class GeraeteListe
      */
     public function geraete(): array
     {
+        if ((bool) config('netzwerk.demo', false)) {
+            return DemoDaten::geraeteListe();
+        }
+
         if (! Netzwerk::konfiguriert()) {
             return $this->leer('keine Datenquelle konfiguriert');
         }
@@ -30,7 +34,7 @@ class GeraeteListe
         try {
             $rows = DB::connection(Netzwerk::connection())->select(
                 sprintf(
-                    'SELECT ip, mac, hostname, vendor, segment, lastSeen, firstSeen FROM %s.network_devices',
+                    'SELECT id, ip, mac, hostname, vendor, segment, lastSeen, firstSeen FROM %s.network_devices',
                     Netzwerk::schema(),
                 )
             );
@@ -39,6 +43,8 @@ class GeraeteListe
 
             return $this->leer('Fehler: '.$e->getMessage());
         }
+
+        $anschluesse = $this->anschluesse();
 
         $grenze = now()->subMinutes((int) config('netzwerk.offline_ab_minuten', 15));
         $aktualisiert = null;
@@ -56,6 +62,7 @@ class GeraeteListe
                 ? null
                 : Carbon::parse($r->lastSeen);
             $r->online = $r->gesehen !== null && $r->gesehen->greaterThanOrEqualTo($grenze);
+            $r->anschluss = $anschluesse[(int) $r->id] ?? null;
 
             if ($r->gesehen !== null && ($aktualisiert === null || $r->gesehen->greaterThan($aktualisiert))) {
                 $aktualisiert = $r->gesehen;
@@ -78,6 +85,53 @@ class GeraeteListe
             'quelle' => 'mssql',
             'aktualisiert' => $aktualisiert?->toDateTimeString(),
         ];
+    }
+
+    /**
+     * Verortung aus Phase 3 (FDB/WLAN): device-id => Anschluss-Objekt.
+     *
+     * Eigene Abfrage mit eigenem try/catch — läuft das Modul-Update vor dem
+     * Collector-Update (Spalten fehlen noch), bleibt die Liste trotzdem
+     * benutzbar, nur ohne Anschluss-Spalte.
+     *
+     * @return array<int, object{text: string, via: string, stand: ?Carbon}>
+     */
+    private function anschluesse(): array
+    {
+        try {
+            $rows = DB::connection(Netzwerk::connection())->select(
+                sprintf(
+                    'SELECT d.id, d.port_name, d.verbunden_via, d.ssid, d.zugeordnet_am,
+                            n.name AS node_name, n.ip AS node_ip
+                     FROM %1$s.network_devices d
+                     JOIN %1$s.network_nodes n ON n.id = d.node_id',
+                    Netzwerk::schema(),
+                )
+            );
+        } catch (Throwable) {
+            return [];
+        }
+
+        $anschluesse = [];
+        foreach ($rows as $r) {
+            $node = $this->leerZuNull($r->node_name) ?? $this->leerZuNull($r->node_ip) ?? 'unbenannt';
+            $port = $this->leerZuNull($r->port_name);
+            $ssid = $this->leerZuNull($r->ssid);
+            $via = $this->leerZuNull($r->verbunden_via) ?? 'lan';
+
+            $text = $via === 'wlan'
+                ? $node.' · WLAN'.($ssid !== null ? ' ('.$ssid.')' : '')
+                : $node.($port !== null ? ' · Port '.$port : '');
+
+            $stand = $this->leerZuNull((string) $r->zugeordnet_am);
+            $anschluesse[(int) $r->id] = (object) [
+                'text' => $text,
+                'via' => $via,
+                'stand' => $stand !== null ? Carbon::parse($stand) : null,
+            ];
+        }
+
+        return $anschluesse;
     }
 
     private function leerZuNull(mixed $wert): ?string

@@ -43,6 +43,10 @@ OID = {
     # Interfaces: klassische ifTable + ifXTable (64-Bit-Zähler)
     "ifTable":  ".1.3.6.1.2.1.2.2.1",
     "ifXTable": ".1.3.6.1.2.1.31.1.1.1",
+    # Phase 3 — Bridge-MIB: FDB (gelernte MACs je Bridge-Port) und die
+    # Übersetzung Bridge-Port -> ifIndex (das sind ZWEI Nummernräume!)
+    "basePortIfIndex": ".1.3.6.1.2.1.17.1.4.1.2",
+    "fdbPort":         ".1.3.6.1.2.1.17.7.1.2.2.1.2",
 }
 
 # Spaltennummern innerhalb der LLDP-Nachbartabelle
@@ -294,6 +298,28 @@ def node_abfragen(cfg, ip, verbose):
                 nachbarn[schluessel]["mgmtIp"] = ".".join(rest[5:9])
 
     node["nachbarn"] = list(nachbarn.values())
+
+    # ---- FDB: welche MACs hat der Switch an welchem Port gelernt?
+    #      Der Index der FDB-Tabelle nennt BRIDGE-Ports; die Übersetzung zum
+    #      ifIndex liefert dot1dBasePortIfIndex. CPU-Ports (z. B. 10000 bei
+    #      Netgear) fehlen in der Übersetzung und fallen so von selbst raus.
+    base_zu_if = {}
+    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["basePortIfIndex"]], verbose) or []:
+        nummer = oid.rpartition(".")[2]
+        if nummer.isdigit():
+            base_zu_if[int(nummer)] = wert_zahl(roh)
+
+    fdb = {}  # ifIndex -> set der dort gelernten MACs
+    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPort"]], verbose) or []:
+        rest = oid[len(OID["fdbPort"]) + 1:].split(".")
+        if len(rest) != 7:      # Index: <fdbId/VLAN>.<6 MAC-Oktetten dezimal>
+            continue
+        if_index = base_zu_if.get(wert_zahl(roh))
+        if if_index is None:    # Port 0 (nicht gelernt) oder CPU-Port
+            continue
+        mac = ":".join(f"{int(x):02x}" for x in rest[1:7])
+        fdb.setdefault(if_index, set()).add(mac)
+    node["fdb"] = fdb
     return node
 
 
@@ -555,6 +581,43 @@ def sammellauf(cfg, verbose):
                 + (" — netmon-Benutzer anlegen, dann bindet der Collector ihn selbst ein"
                    if art == "switch" else ""))
 
+    # 3b) FDB auswerten: Gerät -> (Node, Port). Uplink-Ports (LLDP-Link zu
+    #     einem anderen Node) fallen raus — sonst "hängt" das halbe Netz am
+    #     Uplink —, ebenso die MACs der Nodes selbst. Sieht trotzdem mehr als
+    #     ein Switch eine MAC (Filter-Lücke), gewinnt der Port mit den
+    #     wenigsten gelernten MACs: der ist am nächsten am Gerät.
+    node_macs = set()
+    for key, node in nodes.items():
+        for kandidat in [key] + node.get("aliase", []):
+            if ":" in kandidat and not kandidat.startswith("ip:"):
+                node_macs.add(kandidat)
+
+    zuordnung = {}  # mac -> (macs_am_port, node_key, port_name)
+    for key, daten in ergebnisse.items():
+        uplinks = set()
+        for nachbar in daten["nachbarn"]:
+            n_key = aliase.get(nachbar_matchkey(nachbar), nachbar_matchkey(nachbar))
+            if not n_key or n_key not in nodes:
+                continue
+            lokal = nachbar["lokalerPort"]
+            if lokal in daten["ports"]:   # lldpLocPortNum == ifIndex (Netgear)
+                uplinks.add(lokal)
+            else:                          # sonst über den Port-Namen suchen
+                name = daten["lokalePorts"].get(lokal, "")
+                uplinks.update(i for i, p in daten["ports"].items()
+                               if name and p["name"] == name)
+        for if_index, macs in daten.get("fdb", {}).items():
+            if if_index in uplinks or if_index not in daten["ports"]:
+                continue
+            port_name = daten["ports"][if_index]["name"] or f"Port {if_index}"
+            for mac in macs - node_macs:
+                eintrag = (len(macs), key, port_name)
+                if mac not in zuordnung or eintrag < zuordnung[mac]:
+                    zuordnung[mac] = eintrag
+
+    fdb_csv = [[key, port_name, mac]
+               for mac, (_anzahl, key, port_name) in sorted(zuordnung.items())]
+
     # 4) CSV-Zeilen bauen
     nodes_csv, ports_csv, links_csv = [], [], []
     for key, node in nodes.items():
@@ -600,13 +663,15 @@ def sammellauf(cfg, verbose):
     if not tsql_ausfuehren(cfg, f"USE [{cfg.mssql['database']}];\nGO\n"
                                 f"TRUNCATE TABLE {schema}.network_nodes_stage;\n"
                                 f"TRUNCATE TABLE {schema}.network_ports_stage;\n"
-                                f"TRUNCATE TABLE {schema}.network_links_stage;",
+                                f"TRUNCATE TABLE {schema}.network_links_stage;\n"
+                                f"TRUNCATE TABLE {schema}.network_fdb_stage;",
                            "Staging leeren"):
         return 1
 
     for tabelle, zeilen in (("network_nodes_stage", nodes_csv),
                             ("network_ports_stage", ports_csv),
-                            ("network_links_stage", links_csv)):
+                            ("network_links_stage", links_csv),
+                            ("network_fdb_stage", fdb_csv)):
         pfad = os.path.join(csv_dir, tabelle + ".csv")
         csv_schreiben(pfad, zeilen)
         if zeilen and not freebcp_hochladen(cfg, tabelle, pfad):
@@ -614,27 +679,64 @@ def sammellauf(cfg, verbose):
 
     if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase2.sql"), "MERGE"):
         return 1
+    if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase3.sql"), "MERGE Phase 3"):
+        return 1
 
     state["nodes"] = nodes
     state_sichern(cfg, state)
     log(f"Lauf fertig: {len(ergebnisse)} Switches abgefragt, "
-        f"{len(nodes)} Nodes gesamt, {len(ports_csv)} Ports, {len(links_csv)} Kanten.")
+        f"{len(nodes)} Nodes gesamt, {len(ports_csv)} Ports, {len(links_csv)} Kanten, "
+        f"{len(fdb_csv)} Geräte-Zuordnungen.")
+    return 0
+
+
+def wlan_erkunden(cfg):
+    """Den Enterprise-Baum des WLAN-Controllers walken und die gefundenen
+    Tabellen kompakt zeigen — Einmal-Werkzeug, um die OIDs der AP- und
+    Client-Tabellen zu identifizieren (die MIB des WC7500 liegt nicht vor)."""
+    if "wlan" not in cfg.ini or not cfg.ini["wlan"].get("controller_ip"):
+        sys.exit("FEHLER: Abschnitt [wlan] mit controller_ip fehlt in der Konfiguration.")
+    ip = cfg.ini["wlan"]["controller_ip"]
+    basis = cfg.ini["wlan"].get("basis_oid", ".1.3.6.1.4.1.4526.100.8")
+    log(f"Walke {basis} auf {ip} …")
+    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_argumente(ip), ip, [basis], verbose=True)
+    if not zeilen:
+        sys.exit(f"FEHLER: {ip} liefert nichts unter {basis} "
+                 f"(v2c-Community als [snmp:{ip}]-Abschnitt hinterlegt?).")
+
+    gruppen = {}
+    for oid, typ, roh in zeilen:
+        rest = oid[len(basis) + 1:].split(".")
+        praefix = ".".join(rest[:4])
+        gruppen.setdefault(praefix, []).append((oid, typ, wert_text(typ, roh)))
+
+    log(f"{len(zeilen)} Werte, gruppiert nach {basis}.<Gruppe>:")
+    for praefix in sorted(gruppen, key=lambda p: [int(x) for x in p.split(".") if x.isdigit()]):
+        eintraege = gruppen[praefix]
+        log(f"  .{praefix}  ({len(eintraege)} Zeilen)")
+        for oid, typ, wert in eintraege[:3]:
+            log(f"      {oid} = {typ}: {wert[:100]}")
     return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="netmon-Collector (Phase 2)")
+    parser = argparse.ArgumentParser(description="netmon-Collector (Phase 2+3)")
     parser.add_argument("--verbose", action="store_true", help="gesprächiger Handlauf")
     parser.add_argument("--init-db", action="store_true",
-                        help="network_*-Tabellen einmalig anlegen")
+                        help="network_*-Tabellen anlegen/erweitern (mehrfach ausführbar)")
+    parser.add_argument("--wlan-erkunden", action="store_true",
+                        help="Enterprise-Baum des WLAN-Controllers walken (OID-Suche)")
     parser.add_argument("--config", default=CONFIG_PFAD)
     args = parser.parse_args()
 
     cfg = Config(args.config)
     if args.init_db:
-        ok = tsql_ausfuehren(cfg, sql_datei(cfg, "schema_phase2.sql"), "Tabellen anlegen")
+        ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
+                 for name in ("schema_phase2.sql", "schema_phase3.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
+    if args.wlan_erkunden:
+        return wlan_erkunden(cfg)
     return sammellauf(cfg, args.verbose)
 
 

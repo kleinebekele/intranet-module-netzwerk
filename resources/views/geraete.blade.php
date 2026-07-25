@@ -36,6 +36,7 @@
                                     <th class="px-4 py-2 font-medium">Hostname</th>
                                     <th class="px-4 py-2 font-medium">Hersteller</th>
                                     <th class="px-4 py-2 font-medium">MAC</th>
+                                    <th class="px-4 py-2 font-medium">Anschluss</th>
                                     <th class="px-4 py-2 font-medium">zuletzt gesehen</th>
                                 </tr>
                             </thead>
@@ -55,6 +56,17 @@
                                         <td class="px-4 py-2">{{ $g->hostname ?? '—' }}</td>
                                         <td class="px-4 py-2">{{ $g->vendor ?? '—' }}</td>
                                         <td class="px-4 py-2 font-mono text-xs whitespace-nowrap">{{ $g->mac ?? '—' }}</td>
+                                        <td class="px-4 py-2 whitespace-nowrap"
+                                            @if ($g->anschluss?->stand) title="zugeordnet {{ $g->anschluss->stand->locale('de')->diffForHumans() }}" @endif>
+                                            @if ($g->anschluss)
+                                                <span class="inline-flex items-center gap-1.5">
+                                                    <x-module-icon :name="$g->anschluss->via === 'wlan' ? 'wifi' : 'network'" class="text-base text-gray-400" />
+                                                    {{ $g->anschluss->text }}
+                                                </span>
+                                            @else
+                                                <span class="text-gray-400">—</span>
+                                            @endif
+                                        </td>
                                         <td class="px-4 py-2 text-gray-500 whitespace-nowrap">
                                             {{ $g->gesehen ? $g->gesehen->locale('de')->diffForHumans() : '—' }}
                                         </td>

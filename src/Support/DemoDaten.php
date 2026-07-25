@@ -64,6 +64,75 @@ class DemoDaten
         return ['nodes' => $nodes, 'links' => $links, 'ports' => $ports];
     }
 
+    /**
+     * Beispiel-Geräteliste im Rückgabeformat von GeraeteListe::geraete() —
+     * inklusive Phase-3-Verortung (anschluss), damit sich die Spalte ohne
+     * echte MSSQL-Quelle entwickeln lässt.
+     *
+     * @return array{segmente: array<string, list<object>>, gesamt: int, online: int, quelle: string, aktualisiert: ?string}
+     */
+    public static function geraeteListe(): array
+    {
+        $frisch = now()->subMinutes(3);
+        $stand = now()->subMinutes(4);
+
+        $geraete = [
+            self::geraet('192.168.0.21', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK', 'Micro-Star', true, $frisch,
+                self::anschluss('Masterswitch', '0/13', stand: $stand)),
+            self::geraet('192.168.0.23', '10:7c:61:0a:33:44', 'MUWALD5', 'Micro-Star', true, $frisch,
+                self::anschluss('Masterswitch', '0/13', stand: $stand)),
+            self::geraet('192.168.0.52', 'b8:27:eb:12:34:56', 'netscan-pi', 'Raspberry Pi', true, $frisch,
+                self::anschluss('Zentralswitch', '0/7', stand: $stand)),
+            self::geraet('192.168.0.77', 'aa:5c:11:22:33:44', 'LAPTOP-LEHRER1', null, true, $frisch,
+                self::anschluss('AP Turnhalle', null, via: 'wlan', ssid: 'Schule', stand: $stand)),
+            self::geraet('192.168.0.90', 'de:ad:be:ef:00:90', null, 'Zebra Technologies', false, now()->subHours(6),
+                self::anschluss('PoE Switch Werkstatt', '0/4', stand: now()->subHours(6))),
+            self::geraet('192.168.0.113', null, 'drucker-verwaltung', null, true, $frisch, null),
+            self::geraet('192.168.2.30', null, 'kasse-kueche', null, true, $frisch, null),
+        ];
+
+        $segmente = [];
+        foreach ($geraete as $g) {
+            $segmente[$g->segment][] = $g;
+        }
+
+        return [
+            'segmente' => $segmente,
+            'gesamt' => count($geraete),
+            'online' => count(array_filter($geraete, fn ($g) => $g->online)),
+            'quelle' => 'demo',
+            'aktualisiert' => $frisch->toDateTimeString(),
+        ];
+    }
+
+    private static function geraet(
+        string $ip,
+        ?string $mac,
+        ?string $hostname,
+        ?string $vendor,
+        bool $online,
+        \Illuminate\Support\Carbon $gesehen,
+        ?object $anschluss,
+    ): object {
+        $segment = substr($ip, 0, (int) strrpos($ip, '.')).'.0/24';
+
+        return (object) compact('ip', 'mac', 'hostname', 'vendor', 'segment', 'online', 'gesehen', 'anschluss');
+    }
+
+    private static function anschluss(
+        string $node,
+        ?string $port,
+        string $via = 'lan',
+        ?string $ssid = null,
+        ?\Illuminate\Support\Carbon $stand = null,
+    ): object {
+        $text = $via === 'wlan'
+            ? $node.' · WLAN'.($ssid !== null ? ' ('.$ssid.')' : '')
+            : $node.($port !== null ? ' · Port '.$port : '');
+
+        return (object) ['text' => $text, 'via' => $via, 'stand' => $stand];
+    }
+
     private static function node(
         int $id,
         string $art,

@@ -13,8 +13,11 @@ bestehende `netscan.sh`, das unverändert weiterläuft.
 ```bash
 sudo install -m 700 -o root -g root netmon_collector.py /usr/local/sbin/netmon_collector.py
 sudo install -d -m 755 /usr/local/share/netmon /var/lib/netmon /var/log/netmon
-sudo install -m 644 schema_phase2.sql merge_phase2.sql /usr/local/share/netmon/
+sudo install -m 644 schema_phase2.sql merge_phase2.sql schema_phase3.sql merge_phase3.sql /usr/local/share/netmon/
 ```
+
+Nach jedem Update mit neuen/geänderten SQL-Dateien einmal `--init-db` laufen
+lassen (mehrfach ausführbar, legt nur an bzw. erweitert, was fehlt).
 
 ## 2. Konfiguration
 
@@ -78,6 +81,21 @@ Läuft alle 5 Minuten, um 2 Minuten versetzt zu `netscan.sh`. Log:
 - LLDP-sprechende Endgeräte (PCs, Telefone) werden **keine** Nodes, sondern
   Kanten mit `zu_fremd_mac`/`zu_fremd_name` — so bleiben z. B. die Rechner
   hinter einem unmanaged Verteiler trotzdem auf der Karte sichtbar.
+
+## Phase 3: Gerät-zu-Port-Zuordnung (FDB)
+
+Jeder Sammellauf liest zusätzlich die MAC-Tabellen (FDB) der aktiven Switches
+und ordnet die Endgeräte aus `network_devices` ihrem Switch-Port zu (Spalten
+`node_id`/`port_name`/`verbunden_via`/`zugeordnet_am`). Uplink-Ports (LLDP-Link
+zu einem anderen Node) werden ignoriert; sieht mehr als ein Switch eine MAC,
+gewinnt der Port mit den wenigsten gelernten MACs. Ein Gerät, das gerade
+schweigt, behält seine letzte Zuordnung — `zugeordnet_am` sagt, von wann sie
+stammt. Zuordnen lässt sich nur, was eine MAC hat (praktisch: das lokale
+`.0`-Netz; geroutete Netze kommen mit Phase 4/ARP).
+
+`--wlan-erkunden` walkt den Enterprise-Baum des WLAN-Controllers (Abschnitt
+`[wlan]` in der netmon.conf) und zeigt die gefundenen Tabellen — Einmal-Werkzeug
+zur OID-Suche für die AP-/Client-Erfassung.
 
 ## Fehlersuche
 

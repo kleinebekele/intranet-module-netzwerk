@@ -62,7 +62,8 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 
 1. ✅ Geräte-Inventar
 2. ✅ Netzwerkkarte aus LLDP-Daten (Topologie-Baum, Discovery unbekannter Switches)
-3. Gerät-zu-Switchport-Zuordnung (FDB), WLAN (Controller/APs)
+3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) – Spalte „Anschluss" in der Geräteliste;
+   WLAN (Controller/APs) in Arbeit
 4. Traffic-Statistiken
 
 Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz
