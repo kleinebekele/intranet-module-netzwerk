@@ -18,12 +18,17 @@ Aufrufe:
 """
 
 import argparse
+import base64
 import configparser
 import json
 import os
 import re
+import socket
+import ssl
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime
 
 CONFIG_PFAD = "/etc/netmon/netmon.conf"
@@ -132,6 +137,15 @@ class Config:
     @property
     def mssql(self):
         return self.ini["mssql"]
+
+    @property
+    def opnsense(self):
+        """[opnsense]-Abschnitt oder None — Phase 4 ist optional."""
+        return self.ini["opnsense"] if "opnsense" in self.ini else None
+
+    @property
+    def dns_server(self):
+        return self.ini["dns"].get("server", "") if "dns" in self.ini else ""
 
     @property
     def state_dir(self):
@@ -356,6 +370,86 @@ def nachbar_matchkey(nachbar):
             return mac
     if nachbar.get("mgmtIp"):
         return f"ip:{nachbar['mgmtIp']}"
+    return ""
+
+
+# ----------------------------------------------------- OPNsense (Phase 4) ---
+MAC_RE = re.compile(r'^[0-9a-f]{2}(:[0-9a-f]{2}){5}$')
+
+
+def opnsense_abfragen(cfg, pfad):
+    """GET gegen die OPNsense-API (Basic Auth mit Key:Secret). Selbstsignierte
+    Zertifikate sind bei Firewalls der Normalfall -> keine Zertifikatsprüfung."""
+    o = cfg.opnsense
+    url = o["url"].rstrip("/") + pfad
+    anmeldung = base64.b64encode(f"{o['key']}:{o['secret']}".encode()).decode()
+    anfrage = urllib.request.Request(url, headers={"Authorization": f"Basic {anmeldung}"})
+    kontext = ssl._create_unverified_context()
+    with urllib.request.urlopen(anfrage, timeout=30, context=kontext) as antwort:
+        return json.loads(antwort.read().decode("utf-8", "replace"))
+
+
+def arp_einlesen(cfg, verbose):
+    """ARP-Tabelle der Firewall: MAC<->IP über ALLE Netze. Die Switch-FDBs
+    kennen nur MACs und nmap sieht MACs nur im eigenen Netz — erst mit der
+    ARP-Tabelle bekommen auch Geräte in gerouteten Netzen ihre MAC (und
+    darüber dann ihre Port-Zuordnung)."""
+    try:
+        daten = opnsense_abfragen(cfg, "/api/diagnostics/interface/get_arp")
+    except Exception as fehler:
+        log(f"FEHLER: OPNsense-ARP nicht lesbar: {fehler}")
+        return []
+    zeilen = daten.get("rows", []) if isinstance(daten, dict) else daten
+    eintraege = []
+    for zeile in zeilen or []:
+        mac = str(zeile.get("mac", "")).lower().strip()
+        ip = str(zeile.get("ip", "")).strip()
+        if MAC_RE.match(mac) and mac != "00:00:00:00:00:00" and ip:
+            eintraege.append({"mac": mac, "ip": ip})
+    if verbose:
+        log(f"  OPNsense-ARP: {len(eintraege)} verwertbare Einträge")
+    return eintraege
+
+
+def dns_name(ip, server):
+    """Reverse-Lookup, bevorzugt gegen den konfigurierten Server (der
+    Domaincontroller ist das DNS — die OPNsense macht kein DHCP)."""
+    kommando = ["dig", "+short", "+time=2", "+tries=1", "-x", ip]
+    if server:
+        kommando.append(f"@{server}")
+    try:
+        lauf = subprocess.run(kommando, capture_output=True, text=True, timeout=10)
+    except FileNotFoundError:       # kein dig installiert -> System-Resolver
+        try:
+            return socket.gethostbyaddr(ip)[0]
+        except OSError:
+            return ""
+    except subprocess.TimeoutExpired:
+        return ""
+    if lauf.returncode != 0:
+        return ""
+    for zeile in lauf.stdout.splitlines():
+        zeile = zeile.strip().rstrip(".")
+        if zeile and not zeile.startswith(";"):
+            return zeile
+    return ""
+
+
+def lokale_arp_mac(ip):
+    """MAC aus der ARP-Tabelle des Pi (/proc/net/arp) — etwa die der Firewall,
+    mit der der API-Aufruf eben gesprochen hat (ihre eigene MAC steht nicht
+    in ihrer ARP-Tabelle)."""
+    try:
+        with open("/proc/net/arp", encoding="ascii", errors="replace") as f:
+            next(f)
+            for zeile in f:
+                teile = zeile.split()
+                if (len(teile) >= 4 and teile[0] == ip
+                        and MAC_RE.match(teile[3].lower())
+                        and teile[3] != "00:00:00:00:00:00"):
+                    return teile[3].lower()
+    except OSError:
+        pass
     return ""
 
 
@@ -626,6 +720,40 @@ def sammellauf(cfg, verbose):
     fdb_csv = [[key, port_name, mac]
                for mac, (_anzahl, key, port_name) in sorted(zuordnung.items())]
 
+    # 3c) Phase 4 — OPNsense: ARP über alle Netze + DNS-Namen (Cache im
+    #     State, 1 h). Die Firewall wird ein eigener Node; ihre Kante zum
+    #     Switch liefert die FDB (der Port, an dem ihre MAC gelernt wurde).
+    arp_csv, fw_link = [], None
+    if cfg.opnsense is not None:
+        arp = arp_einlesen(cfg, verbose)
+        dns_cache = state.setdefault("dns", {})
+        for eintrag in arp:
+            treffer = dns_cache.get(eintrag["ip"])
+            if treffer is None or jetzt - treffer.get("ts", 0) > 3600:
+                treffer = {"name": dns_name(eintrag["ip"], cfg.dns_server)[:160], "ts": jetzt}
+                dns_cache[eintrag["ip"]] = treffer
+            arp_csv.append([eintrag["mac"], eintrag["ip"], treffer["name"]])
+        for ip in [ip for ip, w in dns_cache.items() if jetzt - w.get("ts", 0) > 86400]:
+            del dns_cache[ip]
+
+        fw_ip = (cfg.opnsense.get("firewall_ip", "")
+                 or urllib.parse.urlsplit(cfg.opnsense["url"]).hostname or "")
+        fw_key = next((k for k, n in nodes.items() if n.get("ip") == fw_ip), None)
+        if fw_key is None:
+            fw_key = f"ip:{fw_ip}"
+            nodes[fw_key] = {"ip": fw_ip, "art": "firewall", "status": "aktiv",
+                             "name": cfg.opnsense.get("name", "OPNsense"),
+                             "modell": "", "firmware": "", "standort": "",
+                             "fehlversuche": 0}
+        else:
+            nodes[fw_key].update({"art": "firewall", "status": "aktiv", "fehlversuche": 0})
+        gesehen.add(fw_key)
+
+        fw_mac = lokale_arp_mac(fw_ip)
+        if fw_mac and fw_mac in zuordnung:
+            _anzahl, sw_key, port_name = zuordnung[fw_mac]
+            fw_link = [sw_key, port_name, fw_key, "", "", ""]
+
     # 4) CSV-Zeilen bauen
     nodes_csv, ports_csv, links_csv = [], [], []
     for key, node in nodes.items():
@@ -663,6 +791,8 @@ def sammellauf(cfg, verbose):
                         if nachbar.get("chassisSubtype") == 7 else nachbar.get("sysName", ""))
                 links_csv.append([key, von_port, "", nachbar.get("portId", ""),
                                   mac, name])
+    if fw_link:
+        links_csv.append(fw_link)
 
     # 5) Hochladen: Staging leeren -> freebcp -> MERGE
     csv_dir = os.path.join(cfg.state_dir, "csv")
@@ -672,20 +802,26 @@ def sammellauf(cfg, verbose):
                                 f"TRUNCATE TABLE {schema}.network_nodes_stage;\n"
                                 f"TRUNCATE TABLE {schema}.network_ports_stage;\n"
                                 f"TRUNCATE TABLE {schema}.network_links_stage;\n"
-                                f"TRUNCATE TABLE {schema}.network_fdb_stage;",
+                                f"TRUNCATE TABLE {schema}.network_fdb_stage;\n"
+                                f"TRUNCATE TABLE {schema}.network_arp_stage;",
                            "Staging leeren"):
         return 1
 
     for tabelle, zeilen in (("network_nodes_stage", nodes_csv),
                             ("network_ports_stage", ports_csv),
                             ("network_links_stage", links_csv),
-                            ("network_fdb_stage", fdb_csv)):
+                            ("network_fdb_stage", fdb_csv),
+                            ("network_arp_stage", arp_csv)):
         pfad = os.path.join(csv_dir, tabelle + ".csv")
         csv_schreiben(pfad, zeilen)
         if zeilen and not freebcp_hochladen(cfg, tabelle, pfad):
             return 1
 
+    # Reihenfolge: erst Nodes/Ports/Kanten (2), dann ARP-Anreicherung (4),
+    # dann die Zuordnung (3) — so nutzt der FDB-Join schon die frischen MACs.
     if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase2.sql"), "MERGE"):
+        return 1
+    if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase4.sql"), "MERGE Phase 4"):
         return 1
     if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase3.sql"), "MERGE Phase 3"):
         return 1
@@ -694,7 +830,7 @@ def sammellauf(cfg, verbose):
     state_sichern(cfg, state)
     log(f"Lauf fertig: {len(ergebnisse)} Switches abgefragt, "
         f"{len(nodes)} Nodes gesamt, {len(ports_csv)} Ports, {len(links_csv)} Kanten, "
-        f"{len(fdb_csv)} Geräte-Zuordnungen.")
+        f"{len(fdb_csv)} Geräte-Zuordnungen, {len(arp_csv)} ARP-Einträge.")
     return 0
 
 
@@ -740,7 +876,7 @@ def main():
     cfg = Config(args.config)
     if args.init_db:
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
-                 for name in ("schema_phase2.sql", "schema_phase3.sql"))
+                 for name in ("schema_phase2.sql", "schema_phase3.sql", "schema_phase4.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
     if args.wlan_erkunden:

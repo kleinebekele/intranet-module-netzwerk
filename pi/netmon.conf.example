@@ -49,6 +49,21 @@ stumm_nach_fehlversuchen = 3
 # Basis für --wlan-erkunden (Netgear-Enterprise-Baum des WC7500):
 # basis_oid = .1.3.6.1.4.1.4526.100.8
 
+[opnsense]
+# Firewall-API (Phase 4): ARP über alle Netze + Firewall als Karten-Node.
+# Benutzer mit reinen Anzeige-ACLs (netmon-api); Werte wie in ~/.opnsense/api.env.
+# Fehlt der Abschnitt, wird Phase 4 einfach übersprungen.
+# url = https://192.168.0.1
+# key = HIER-DER-API-KEY
+# secret = HIER-DAS-API-SECRET
+# name = OPNsense
+# firewall_ip =            # nur nötig, wenn abweichend vom Host in url
+
+[dns]
+# Reverse-Lookup-Server für Gerätenamen (das DNS macht der Domaincontroller,
+# NICHT die OPNsense). Leer/weggelassen = System-Resolver des Pi.
+# server = 192.168.0.XX
+
 [mssql]
 # Zielserver — Werte wie in netscan.sh. `server` ist das, was dort bei
 # freebcp/tsql hinter -S bzw. -H steht (IP oder freetds.conf-Eintrag).

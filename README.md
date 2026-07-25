@@ -64,7 +64,8 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 2. ✅ Netzwerkkarte aus LLDP-Daten (Topologie-Baum, Discovery unbekannter Switches)
 3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) – Spalte „Anschluss" in der Geräteliste;
    WLAN (Controller/APs) in Arbeit
-4. Traffic-Statistiken
+4. ✅ OPNsense-ARP + DNS-Namen (MACs/Namen über alle Netze, Firewall auf der Karte)
+5. Traffic-Statistiken
 
 Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz
 (Erst-Einsatz: Waldorfschule).

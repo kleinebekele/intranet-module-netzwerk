@@ -13,7 +13,7 @@ bestehende `netscan.sh`, das unverändert weiterläuft.
 ```bash
 sudo install -m 700 -o root -g root netmon_collector.py /usr/local/sbin/netmon_collector.py
 sudo install -d -m 755 /usr/local/share/netmon /var/lib/netmon /var/log/netmon
-sudo install -m 644 schema_phase2.sql merge_phase2.sql schema_phase3.sql merge_phase3.sql /usr/local/share/netmon/
+sudo install -m 644 schema_phase*.sql merge_phase*.sql /usr/local/share/netmon/
 ```
 
 Nach jedem Update mit neuen/geänderten SQL-Dateien einmal `--init-db` laufen
@@ -96,6 +96,18 @@ stammt. Zuordnen lässt sich nur, was eine MAC hat (praktisch: das lokale
 `--wlan-erkunden` walkt den Enterprise-Baum des WLAN-Controllers (Abschnitt
 `[wlan]` in der netmon.conf) und zeigt die gefundenen Tabellen — Einmal-Werkzeug
 zur OID-Suche für die AP-/Client-Erfassung.
+
+## Phase 4: OPNsense-ARP + DNS-Namen
+
+Mit einem `[opnsense]`-Abschnitt (API-URL, Key/Secret des Anzeige-Benutzers)
+liest jeder Lauf zusätzlich die ARP-Tabelle der Firewall: MAC↔IP über **alle**
+Netze. Damit bekommen Geräte in gerouteten Netzen ihre MAC nachgetragen — und
+darüber im selben Lauf ihre Port-Zuordnung. Namen kommen per DNS-Reverse
+(`[dns] server =` Domaincontroller; braucht `dig`, sonst System-Resolver);
+beides wird nur **ergänzt**, nie überschrieben. Die Firewall erscheint als
+eigener Node auf der Karte; ihre Kante zum Switch leitet der Collector aus der
+FDB ab (der Port, an dem ihre MAC gelernt wurde). DNS-Antworten werden eine
+Stunde im State zwischengespeichert.
 
 ## Fehlersuche
 
