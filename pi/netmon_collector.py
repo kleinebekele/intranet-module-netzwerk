@@ -834,14 +834,21 @@ def sammellauf(cfg, verbose):
     return 0
 
 
-def wlan_erkunden(cfg):
+def wlan_erkunden(cfg, unter_oid):
     """Den Enterprise-Baum des WLAN-Controllers walken und die gefundenen
     Tabellen kompakt zeigen — Einmal-Werkzeug, um die OIDs der AP- und
-    Client-Tabellen zu identifizieren (die MIB des WC7500 liegt nicht vor)."""
+    Client-Tabellen zu identifizieren (die MIB des WC7500 liegt nicht vor).
+
+    Ohne Argument: grober Überblick (Gruppen in Tiefe 4). Mit einer OID als
+    Argument (z. B. der Entry einer Tabelle wie ....8.6.4.1.1): dieser Ast
+    SPALTENWEISE — je Spalte die Zeilenzahl und drei Beispielwerte."""
     if "wlan" not in cfg.ini or not cfg.ini["wlan"].get("controller_ip"):
         sys.exit("FEHLER: Abschnitt [wlan] mit controller_ip fehlt in der Konfiguration.")
     ip = cfg.ini["wlan"]["controller_ip"]
-    basis = cfg.ini["wlan"].get("basis_oid", ".1.3.6.1.4.1.4526.100.8")
+    if unter_oid:
+        basis, tiefe = unter_oid.rstrip("."), 1
+    else:
+        basis, tiefe = cfg.ini["wlan"].get("basis_oid", ".1.3.6.1.4.1.4526.100.8"), 4
     log(f"Walke {basis} auf {ip} …")
     zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_argumente(ip), ip, [basis], verbose=True)
     if not zeilen:
@@ -851,7 +858,7 @@ def wlan_erkunden(cfg):
     gruppen = {}
     for oid, typ, roh in zeilen:
         rest = oid[len(basis) + 1:].split(".")
-        praefix = ".".join(rest[:4])
+        praefix = ".".join(rest[:tiefe])
         gruppen.setdefault(praefix, []).append((oid, typ, wert_text(typ, roh)))
 
     log(f"{len(zeilen)} Werte, gruppiert nach {basis}.<Gruppe>:")
@@ -868,8 +875,10 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="gesprächiger Handlauf")
     parser.add_argument("--init-db", action="store_true",
                         help="network_*-Tabellen anlegen/erweitern (mehrfach ausführbar)")
-    parser.add_argument("--wlan-erkunden", action="store_true",
-                        help="Enterprise-Baum des WLAN-Controllers walken (OID-Suche)")
+    parser.add_argument("--wlan-erkunden", nargs="?", const="", default=None,
+                        metavar="OID",
+                        help="Enterprise-Baum des WLAN-Controllers walken (OID-Suche); "
+                             "mit OID-Argument: diesen Ast spaltenweise zeigen")
     parser.add_argument("--config", default=CONFIG_PFAD)
     args = parser.parse_args()
 
@@ -879,8 +888,8 @@ def main():
                  for name in ("schema_phase2.sql", "schema_phase3.sql", "schema_phase4.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
-    if args.wlan_erkunden:
-        return wlan_erkunden(cfg)
+    if args.wlan_erkunden is not None:
+        return wlan_erkunden(cfg, args.wlan_erkunden)
     return sammellauf(cfg, args.verbose)
 
 
