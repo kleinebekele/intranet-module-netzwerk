@@ -723,6 +723,14 @@ def sammellauf(cfg, verbose):
             if ":" in kandidat and not kandidat.startswith("ip:"):
                 node_macs.add(kandidat)
 
+    # Gateway-Adresse/-MAC schon hier bestimmen (braucht der Uplink-Rückfall
+    # unten UND der Firewall-Node in 3c).
+    fw_ip = fw_mac = ""
+    if cfg.opnsense is not None:
+        fw_ip = (cfg.opnsense.get("firewall_ip", "")
+                 or urllib.parse.urlsplit(cfg.opnsense["url"]).hostname or "")
+        fw_mac = lokale_arp_mac(fw_ip)
+
     fdb_lookup = {}  # mac -> (macs_am_port, node_key, port_name), ALLE MACs
     for key, daten in ergebnisse.items():
         uplinks = set()
@@ -737,6 +745,14 @@ def sammellauf(cfg, verbose):
                 name = daten["lokalePorts"].get(lokal, "")
                 uplinks.update(i for i, p in daten["ports"].items()
                                if name and p["name"] == name)
+        if not uplinks and fw_mac:
+            # Switch ohne verwertbares LLDP (GS110TPv3): sein Uplink ist so
+            # nicht erkennbar, und dort stehen die MACs des halben Netzes —
+            # bei kleiner FDB "gewinnt" der Uplink sonst gegen die echten
+            # Ports. Bester Anhaltspunkt: der Port mit der Gateway-MAC IST
+            # der Uplink (jedes Gerät redet mit dem Gateway).
+            uplinks.update(i for i, macs in daten.get("fdb", {}).items()
+                           if fw_mac in macs)
         for if_index, macs in daten.get("fdb", {}).items():
             if if_index in uplinks or if_index not in daten["ports"]:
                 continue
@@ -766,8 +782,6 @@ def sammellauf(cfg, verbose):
         for ip in [ip for ip, w in dns_cache.items() if jetzt - w.get("ts", 0) > 86400]:
             del dns_cache[ip]
 
-        fw_ip = (cfg.opnsense.get("firewall_ip", "")
-                 or urllib.parse.urlsplit(cfg.opnsense["url"]).hostname or "")
         fw_key = next((k for k, n in nodes.items() if n.get("ip") == fw_ip), None)
         if fw_key is None:
             fw_key = f"ip:{fw_ip}"
@@ -779,7 +793,6 @@ def sammellauf(cfg, verbose):
             nodes[fw_key].update({"art": "firewall", "status": "aktiv", "fehlversuche": 0})
         gesehen.add(fw_key)
 
-        fw_mac = lokale_arp_mac(fw_ip)
         if fw_mac and fw_mac in fdb_lookup:
             _anzahl, sw_key, port_name = fdb_lookup[fw_mac]
             if sw_key != fw_key:
