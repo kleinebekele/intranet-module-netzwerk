@@ -417,6 +417,35 @@ def raten_berechnen(state, match_key, ports, jetzt):
     state["zaehler"][match_key] = neu
 
 
+def duplikate_zusammenfuehren(nodes, state):
+    """Zwei Einträge mit derselben IP sind dasselbe Gerät — passiert, wenn
+    ein Switch einmal per LLDP entdeckt wurde (Chassis-MAC der Nachbarn als
+    Schlüssel) und sein eigener Poll später eine ANDERE Kennung lieferte
+    (ip:<ip>, oder Port- statt Chassis-MAC). Der gepollte Eintrag gewinnt;
+    die übrigen Schlüssel bleiben als Aliase erhalten, damit die
+    LLDP-Verweise der Nachbarn weiter auf den einen Node zeigen."""
+    rang = {"aktiv": 0, "stumm": 1, "entdeckt": 2}
+    nach_ip = {}
+    for key, node in nodes.items():
+        if node.get("ip"):
+            nach_ip.setdefault(node["ip"], []).append(key)
+    for ip, schluessel in nach_ip.items():
+        if len(schluessel) < 2:
+            continue
+        schluessel.sort(key=lambda k: rang.get(nodes[k]["status"], 9))
+        kanon = schluessel[0]
+        for key in schluessel[1:]:
+            doppel = nodes.pop(key)
+            aliase = set(nodes[kanon].get("aliase", [])) | set(doppel.get("aliase", [])) | {key}
+            aliase.discard(kanon)
+            nodes[kanon]["aliase"] = sorted(aliase)
+            for feld in ("name", "modell", "firmware", "standort"):
+                if not nodes[kanon].get(feld):
+                    nodes[kanon][feld] = doppel.get(feld, "")
+            state["zaehler"].pop(key, None)
+            log(f"Doppelten Eintrag zusammengeführt: {key} -> {kanon} ({ip})")
+
+
 def sammellauf(cfg, verbose):
     state = state_laden(cfg)
     nodes = state["nodes"]
@@ -429,6 +458,8 @@ def sammellauf(cfg, verbose):
             nodes[f"ip:{ip}"] = {"ip": ip, "art": "switch", "status": "aktiv",
                                  "name": "", "modell": "", "firmware": "",
                                  "standort": "", "fehlversuche": 0}
+
+    duplikate_zusammenfuehren(nodes, state)
 
     # 1) "entdeckt"-Switches: je Lauf einmal anklopfen — klappt der
     #    netmon-Zugang inzwischen, werden sie aktiv (und gleich voll gepollt).
@@ -462,12 +493,21 @@ def sammellauf(cfg, verbose):
                      "firmware": daten["firmware"] or node.get("firmware", ""),
                      "standort": daten["standort"] or node.get("standort", "")})
 
-        # Seed-Platzhalter (ip:...) auf die echte Chassis-MAC umziehen
+        # Seed-Platzhalter (ip:...) auf die echte Chassis-MAC umziehen. Der
+        # alte Schlüssel bleibt als Alias; steht unter dem neuen Schlüssel
+        # schon ein (z. B. per LLDP entdeckter) Eintrag, wird er geschluckt.
         if daten["matchKey"] != key:
-            nodes[daten["matchKey"]] = nodes.pop(key)
+            neu = daten["matchKey"]
+            alt = nodes.pop(key)
+            aliase = set(alt.get("aliase", [])) | {key}
+            if neu in nodes:
+                aliase |= set(nodes[neu].get("aliase", []))
+            aliase.discard(neu)
+            alt["aliase"] = sorted(aliase)
+            nodes[neu] = alt
             if key in state["zaehler"]:
-                state["zaehler"][daten["matchKey"]] = state["zaehler"].pop(key)
-            key = daten["matchKey"]
+                state["zaehler"][neu] = state["zaehler"].pop(key)
+            key = neu
 
         raten_berechnen(state, key, daten["ports"], jetzt)
         ergebnisse[key] = daten
@@ -477,16 +517,29 @@ def sammellauf(cfg, verbose):
                 f"{len(daten['nachbarn'])} LLDP-Nachbarn")
 
     # 3) Discovery: LLDP-Nachbarn mit Bridge-/AP-Fähigkeit, die noch fehlen
+    aliase = {a: key for key, node in nodes.items() for a in node.get("aliase", [])}
     for key, daten in ergebnisse.items():
         for nachbar in daten["nachbarn"]:
             bridge, ap = nachbar_faehigkeiten(nachbar)
             n_key = nachbar_matchkey(nachbar)
             if not n_key:
                 continue
+            n_key = aliase.get(n_key, n_key)
             if n_key in nodes:
                 gesehen.add(n_key)
                 if not nodes[n_key].get("ip") and nachbar.get("mgmtIp"):
                     nodes[n_key]["ip"] = nachbar["mgmtIp"]
+                continue
+            # Meldet der Nachbar eine IP, die schon einem Node gehört, ist es
+            # derselbe Kasten unter anderer Kennung -> Alias statt Duplikat.
+            mgmt = nachbar.get("mgmtIp")
+            treffer = None
+            if mgmt:
+                treffer = next((k for k, n in nodes.items() if n.get("ip") == mgmt), None)
+            if treffer:
+                nodes[treffer]["aliase"] = sorted(set(nodes[treffer].get("aliase", [])) | {n_key})
+                aliase[n_key] = treffer
+                gesehen.add(treffer)
                 continue
             if not (bridge or ap):
                 continue  # PCs & Co. werden Kanten (zu_fremd_*), keine Nodes
@@ -520,6 +573,7 @@ def sammellauf(cfg, verbose):
             von_port = (daten["lokalePorts"].get(nachbar["lokalerPort"])
                         or f"Port {nachbar['lokalerPort']}")
             n_key = nachbar_matchkey(nachbar)
+            n_key = aliase.get(n_key, n_key)
             if n_key and n_key in nodes:
                 # Kante zwischen zwei Nodes nur einmal aufnehmen, auch wenn
                 # beide Seiten sie melden

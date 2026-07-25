@@ -86,5 +86,10 @@ Läuft alle 5 Minuten, um 2 Minuten versetzt zu `netscan.sh`. Log:
 - Ein Switch fehlt → antwortet er auf `snmpget <IP> 1.3.6.1.2.1.1.5.0`
   (mit `~/.snmp/snmp.conf`)? S3300-artige Geräte brauchen einen
   `[snmp:IP]`-Ausnahmeabschnitt.
+- Ein Gerät steht **doppelt** in der Liste (einmal aktiv, einmal „entdeckt") →
+  es war unter zwei Kennungen bekannt (LLDP-Chassis-MAC der Nachbarn vs.
+  eigene Poll-Kennung). Der Collector führt Einträge mit derselben IP seit
+  Ende Juli 2026 selbst zusammen und räumt die verwaiste DB-Zeile im nächsten
+  Lauf ab — es reicht also, einen Lauf abzuwarten.
 - Zwischenstände: `/var/lib/netmon/state.json` (bekannte Nodes + Zählerstände),
   CSV-Dateien des letzten Laufs unter `/var/lib/netmon/csv/`.

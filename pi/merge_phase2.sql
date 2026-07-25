@@ -111,6 +111,35 @@ JOIN __SCHEMA__.network_nodes n1 ON n1.matchKey = s.von_matchKey
 LEFT JOIN __SCHEMA__.network_nodes n2 ON n2.matchKey = NULLIF(s.zu_matchKey, '');
 GO
 
+-- ------------------------------------------------------ Verwaiste Nodes ----
+-- Der Collector lädt in jedem Lauf ALLE ihm bekannten Nodes hoch. Ein Node,
+-- der in der Zieltabelle steht, aber nicht (mehr) im Staging, ist ein
+-- verwaister Rest einer Schlüssel-Wanderung (ip:<ip> -> Chassis-MAC) oder
+-- eines zusammengeführten Duplikats — er fliegt samt Ports/Kanten raus.
+-- Schutz: nur wenn das Staging wirklich gefüllt ist.
+IF EXISTS (SELECT 1 FROM __SCHEMA__.network_nodes_stage
+           WHERE NULLIF(matchKey, '') IS NOT NULL)
+BEGIN
+    DELETE p
+    FROM __SCHEMA__.network_ports p
+    JOIN __SCHEMA__.network_nodes n ON n.id = p.node_id
+    WHERE NOT EXISTS (SELECT 1 FROM __SCHEMA__.network_nodes_stage s
+                      WHERE s.matchKey = n.matchKey);
+
+    DELETE l
+    FROM __SCHEMA__.network_links l
+    WHERE EXISTS (SELECT 1 FROM __SCHEMA__.network_nodes n
+                  WHERE n.id IN (l.von_node_id, l.zu_node_id)
+                    AND NOT EXISTS (SELECT 1 FROM __SCHEMA__.network_nodes_stage s
+                                    WHERE s.matchKey = n.matchKey));
+
+    DELETE n
+    FROM __SCHEMA__.network_nodes n
+    WHERE NOT EXISTS (SELECT 1 FROM __SCHEMA__.network_nodes_stage s
+                      WHERE s.matchKey = n.matchKey);
+END
+GO
+
 -- Staging leeren — der nächste Lauf beginnt sauber.
 TRUNCATE TABLE __SCHEMA__.network_nodes_stage;
 TRUNCATE TABLE __SCHEMA__.network_ports_stage;
