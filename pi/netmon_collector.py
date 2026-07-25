@@ -47,6 +47,9 @@ OID = {
     # Übersetzung Bridge-Port -> ifIndex (das sind ZWEI Nummernräume!)
     "basePortIfIndex": ".1.3.6.1.2.1.17.1.4.1.2",
     "fdbPort":         ".1.3.6.1.2.1.17.7.1.2.2.1.2",
+    # Rückfallweg für Smart Switches ohne Q-BRIDGE (GS110TPv3: "Error in
+    # packet"): klassische dot1d-FDB, Index NUR die MAC (ohne fdbId/VLAN).
+    "fdbPortAlt":      ".1.3.6.1.2.1.17.4.3.1.2",
 }
 
 # Spaltennummern innerhalb der LLDP-Nachbartabelle
@@ -310,14 +313,19 @@ def node_abfragen(cfg, ip, verbose):
             base_zu_if[int(nummer)] = wert_zahl(roh)
 
     fdb = {}  # ifIndex -> set der dort gelernten MACs
-    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPort"]], verbose) or []:
-        rest = oid[len(OID["fdbPort"]) + 1:].split(".")
-        if len(rest) != 7:      # Index: <fdbId/VLAN>.<6 MAC-Oktetten dezimal>
+    fdb_zeilen = snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPort"]], verbose)
+    fdb_praefix, index_laenge = OID["fdbPort"], 7   # <fdbId/VLAN>.<6 MAC-Oktetten>
+    if not fdb_zeilen:
+        fdb_zeilen = snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPortAlt"]], verbose)
+        fdb_praefix, index_laenge = OID["fdbPortAlt"], 6   # nur <6 MAC-Oktetten>
+    for oid, _typ, roh in fdb_zeilen or []:
+        rest = oid[len(fdb_praefix) + 1:].split(".")
+        if len(rest) != index_laenge:
             continue
         if_index = base_zu_if.get(wert_zahl(roh))
         if if_index is None:    # Port 0 (nicht gelernt) oder CPU-Port
             continue
-        mac = ":".join(f"{int(x):02x}" for x in rest[1:7])
+        mac = ":".join(f"{int(x):02x}" for x in rest[-6:])
         fdb.setdefault(if_index, set()).add(mac)
     node["fdb"] = fdb
     return node
