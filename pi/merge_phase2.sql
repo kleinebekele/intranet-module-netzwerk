@@ -140,8 +140,6 @@ BEGIN
 END
 GO
 
--- Staging leeren — der nächste Lauf beginnt sauber.
-TRUNCATE TABLE __SCHEMA__.network_nodes_stage;
-TRUNCATE TABLE __SCHEMA__.network_ports_stage;
-TRUNCATE TABLE __SCHEMA__.network_links_stage;
-GO
+-- Staging bleibt hier absichtlich stehen: merge_phase5.sql liest die
+-- Port-Stage für die Verlaufsdaten noch einmal und räumt danach auf.
+-- (Der Collector leert ohnehin alle Stages zu Beginn jedes Laufs.)

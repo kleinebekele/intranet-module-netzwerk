@@ -68,7 +68,8 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) und WLAN (WC7500: APs als Karten-Knoten,
    Clients mit „AP + SSID") – Spalte „Anschluss" in der Geräteliste
 4. ✅ OPNsense-ARP + DNS-Namen (MACs/Namen über alle Netze, Firewall auf der Karte)
-5. Traffic-Statistiken
+5. ✅ Traffic-Statistiken – Seite „Statistik": Verläufe je Port (24 h / 7 Tage / 30 Tage)
+   aus `network_port_stats`, serverseitig gerenderte SVG-Charts
 
 Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz
 (Erst-Einsatz: Waldorfschule).

@@ -190,6 +190,7 @@ class DemoDaten
         for ($i = 1; $i <= $gesamt; $i++) {
             $istAktiv = $i <= $aktiv;
             $zeilen[] = (object) [
+                'id' => $nodeId * 100 + $i,
                 'node_id' => $nodeId,
                 'name' => '0/'.$i,
                 'operStatus' => $istAktiv ? 'up' : 'down',
@@ -201,6 +202,44 @@ class DemoDaten
         }
 
         return $zeilen;
+    }
+
+    /**
+     * Erfundene Verlaufsreihen für die Statistik-Seite: je aktivem Port des
+     * Knotens eine Tageskurve (nachts ruhig, vormittags Spitze) mit etwas
+     * deterministischem "Rauschen" – und einer Lücke, damit sich die
+     * Segment-Logik zeigen muss.
+     *
+     * @return array<int, list<array{t: \Illuminate\Support\Carbon, in: ?int, out: ?int, inMax: ?int, outMax: ?int}>>
+     */
+    public static function portStatistik(int $nodeId, int $stunden, int $bucketMinuten): array
+    {
+        $reihen = [];
+        $schritte = intdiv($stunden * 60, $bucketMinuten);
+        $start = now()->subHours($stunden);
+
+        foreach (self::kartenRohdaten()['ports'] as $port) {
+            if ((int) $port->node_id !== $nodeId || $port->operStatus !== 'up') {
+                continue;
+            }
+            $basis = 2_000_000 * (1 + ($port->id % 7));
+            $punkte = [];
+            for ($i = 0; $i <= $schritte; $i++) {
+                $t = $start->copy()->addMinutes($i * $bucketMinuten);
+                if ($i > $schritte * 0.55 && $i < $schritte * 0.60) {
+                    continue;   // simulierter Collector-Ausfall
+                }
+                $tagesgang = 0.25 + 0.75 * max(0, sin(($t->hour - 5) / 14 * M_PI));
+                $rauschen = 0.7 + 0.3 * sin($i * 0.7 + $port->id);
+                $in = (int) ($basis * $tagesgang * $rauschen);
+                $out = (int) ($basis * 0.4 * $tagesgang * (2 - $rauschen));
+                $punkte[] = ['t' => $t, 'in' => $in, 'out' => $out,
+                    'inMax' => (int) ($in * 1.6), 'outMax' => (int) ($out * 1.6)];
+            }
+            $reihen[(int) $port->id] = $punkte;
+        }
+
+        return $reihen;
     }
 
     /**

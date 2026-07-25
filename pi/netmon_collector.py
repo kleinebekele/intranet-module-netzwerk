@@ -921,6 +921,8 @@ def sammellauf(cfg, verbose):
         return 1
     if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase3.sql"), "MERGE Phase 3"):
         return 1
+    if not tsql_ausfuehren(cfg, sql_datei(cfg, "merge_phase5.sql"), "MERGE Phase 5"):
+        return 1
 
     state["nodes"] = nodes
     state_sichern(cfg, state)
@@ -982,7 +984,8 @@ def main():
     cfg = Config(args.config)
     if args.init_db:
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
-                 for name in ("schema_phase2.sql", "schema_phase3.sql", "schema_phase4.sql"))
+                 for name in ("schema_phase2.sql", "schema_phase3.sql",
+                              "schema_phase4.sql", "schema_phase5.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
     if args.wlan_erkunden is not None:

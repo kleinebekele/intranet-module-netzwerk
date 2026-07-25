@@ -23,7 +23,8 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
     {
         return ModuleManifest::make('netzwerk', 'Netzwerk', icon: 'network')
             ->item('index', 'Karte', 'module.netzwerk.index', icon: 'network')
-            ->item('geraete', 'Geräte', 'module.netzwerk.geraete', icon: 'list');
+            ->item('geraete', 'Geräte', 'module.netzwerk.geraete', icon: 'list')
+            ->item('statistik', 'Statistik', 'module.netzwerk.statistik', icon: 'chart');
     }
 
     public function register(): void

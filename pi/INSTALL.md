@@ -118,6 +118,15 @@ eigener Node auf der Karte; ihre Kante zum Switch leitet der Collector aus der
 FDB ab (der Port, an dem ihre MAC gelernt wurde). DNS-Antworten werden eine
 Stunde im State zwischengespeichert.
 
+## Phase 5: Traffic-Historie
+
+`network_port_stats` bekommt je Lauf und **aktivem** Port eine Zeile mit den
+aktuellen Raten (Zeitstempel = Zählerstand des Laufs). Aufbewahrung 30 Tage;
+das Aufräumen (Altdaten + Zeilen verwaister Ports) erledigt `merge_phase5.sql`
+bei jedem Lauf mit. Achtung Reihenfolge: `merge_phase2.sql` lässt die Stages
+seit Phase 5 bewusst stehen — aufgeräumt wird erst am Ende von
+`merge_phase5.sql`.
+
 ## Fehlersuche
 
 - `FEHLER bei MERGE`/`freebcp` im Log → Zugangsdaten in `[mssql]` prüfen;

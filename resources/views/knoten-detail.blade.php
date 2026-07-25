@@ -28,7 +28,12 @@
                     @else
                         <span class="text-xs font-semibold text-green-800 bg-green-100 rounded px-1.5 py-0.5">online</span>
                     @endif
-                    <a href="{{ route('module.netzwerk.index') }}" class="ml-auto text-sm text-gray-500 hover:text-gray-700 hover:underline">zur Karte</a>
+                    <span class="ml-auto flex items-center gap-4">
+                        @if (count($ports) > 0)
+                            <a href="{{ route('module.netzwerk.statistik', ['knoten' => $knoten->id]) }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Statistik</a>
+                        @endif
+                        <a href="{{ route('module.netzwerk.index') }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">zur Karte</a>
+                    </span>
                 </div>
                 <div class="mt-2 text-sm text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
                     @if ($knoten->ip)<span class="font-mono">{{ $knoten->ip }}</span>@endif
