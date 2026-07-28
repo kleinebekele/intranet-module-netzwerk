@@ -213,6 +213,34 @@ class KartenDaten
             $wurzeln[] = $wurzel;
         }
 
+        // ── LLDP-Fremdeinträge mit den zugeordneten Endgeräten zusammenführen ─
+        //    Gleiche MAC am selben Knoten = dasselbe Gerät: der Chip im Kasten
+        //    entfällt, und der LLDP-Name (sysName) ergänzt einen fehlenden
+        //    Hostnamen in der Geräte-Leiste. Übrig bleiben echte Nur-LLDP-
+        //    Nachbarn (kein Inventar-Eintrag, z. B. fremdes Management-Netz).
+        foreach ($beiId as $n) {
+            if ($n->fremde === [] || $n->geraete === []) {
+                continue;
+            }
+            $nachMac = [];
+            foreach ($n->geraete as $g) {
+                if ($g->mac !== null) {
+                    $nachMac[mb_strtolower($g->mac)] = $g;
+                }
+            }
+            $n->fremde = array_values(array_filter($n->fremde, function (array $f) use ($nachMac) {
+                $mac = mb_strtolower((string) ($f['mac'] ?? ''));
+                if ($mac === '' || ! isset($nachMac[$mac])) {
+                    return true;
+                }
+                if ($nachMac[$mac]->hostname === null) {
+                    $nachMac[$mac]->anzeige = $f['name'];
+                }
+
+                return false;
+            }));
+        }
+
         // ── Übrig gebliebene Kanten = Ring/Redundanz, nicht verschweigen ──────
         $quer = [];
         foreach ($kanten as $k) {

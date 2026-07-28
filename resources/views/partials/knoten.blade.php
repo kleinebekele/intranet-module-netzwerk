@@ -64,7 +64,8 @@
         @if (count($knoten->fremde) > 0)
             <div class="mt-2 text-xs text-gray-600">
                 @foreach ($knoten->fremde as $fremd)
-                    <span class="inline-block bg-gray-100 rounded px-1.5 py-0.5 mr-1 mb-0.5">
+                    <span class="inline-block bg-gray-100 rounded px-1.5 py-0.5 mr-1 mb-0.5"
+                          title="per LLDP am Port gemeldet, ohne Eintrag im Geräte-Inventar{{ $fremd['mac'] ? ' · '.$fremd['mac'] : '' }}">
                         {{ $fremd['name'] }}@if ($fremd['port']) <span class="text-gray-400 font-mono">({{ $fremd['port'] }})</span>@endif
                     </span>
                 @endforeach
