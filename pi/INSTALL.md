@@ -134,6 +134,18 @@ direkt danach `--init-db` ausführen (legt die neuen Spalten an). Startet genau
 in diesem Moment ein Cron-Lauf, scheitert höchstens dieser eine — der nächste
 läuft wieder sauber durch.
 
+## OPNsense-Interface-Traffic
+
+Mit `[opnsense]`-Abschnitt liest jeder Lauf zusätzlich
+`/api/diagnostics/traffic/interface` (ACL „Reporting: Traffic") und schreibt
+die **zugewiesenen Interfaces der Firewall als Ports ihres Nodes** in
+`network_ports`: Name = vergebene Beschreibung, ifIndex = FreeBSD-Index,
+Status aus Link-State/Flags, Raten aus der Byte-Zähler-Differenz (gemeinsamer
+State mit den Switches). Loopback/pflog/pfsync/enc werden übersprungen,
+VLAN-Spalten bleiben leer. Damit zeigen Karte, Knoten-Detailseite und
+Statistik die Firewall wie jeden Switch — ganz ohne SNMP auf der OPNsense.
+`--opnsense-erkunden [PFAD]` ist das zugehörige Erkundungswerkzeug.
+
 ## Phase 5: Traffic-Historie
 
 `network_port_stats` bekommt je Lauf und **aktivem** Port eine Zeile mit den

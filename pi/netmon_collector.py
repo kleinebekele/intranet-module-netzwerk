@@ -508,6 +508,49 @@ def arp_einlesen(cfg, verbose):
     return eintraege
 
 
+def opnsense_interfaces(cfg, verbose):
+    """Zugewiesene OPNsense-Interfaces als Port-Dicts (dieselbe Form wie bei
+    node_abfragen) — Quelle /api/diagnostics/traffic/interface (ACL
+    „Reporting: Traffic"): enthält Name (die vergebene Beschreibung),
+    FreeBSD-ifIndex, Link-State, Line-Rate und Byte-Zähler in einem Aufruf.
+    Werte kommen netstat-artig als Strings mit Füll-Leerzeichen."""
+    try:
+        daten = opnsense_abfragen(cfg, "/api/diagnostics/traffic/interface")
+    except Exception as fehler:
+        log(f"FEHLER: OPNsense-Interface-Traffic nicht lesbar: {fehler}")
+        return {}
+
+    ports = {}
+    for schluessel, w in (daten.get("interfaces") or {}).items():
+        if not isinstance(w, dict):
+            continue
+        device = str(w.get("device", "")).strip()
+        if device.startswith(("lo", "pflog", "pfsync", "enc")):
+            continue
+        index = wert_zahl(str(w.get("index", "")))
+        if index is None:
+            continue
+        try:
+            flags = int(str(w.get("flags", "0")).strip() or "0", 16)
+        except ValueError:
+            flags = 0
+        # FreeBSD: link state 2 = up, 1 = down, 0 = unbekannt (z. B. Bridges —
+        # dann entscheidet IFF_RUNNING 0x40); IFF_UP 0x1 = administrativ an.
+        link = str(w.get("link state", "")).strip()
+        rate = wert_zahl(str(w.get("line rate", "")))
+        ports[index] = {
+            "name": str(w.get("name", "")).strip() or schluessel,
+            "admin": "up" if flags & 0x1 else "down",
+            "oper": "up" if link == "2" or (link != "1" and flags & 0x40) else "down",
+            "speed": None if rate is None else rate // 1_000_000,
+            "inOctets": wert_zahl(str(w.get("bytes received", ""))),
+            "outOctets": wert_zahl(str(w.get("bytes transmitted", ""))),
+        }
+    if verbose:
+        log(f"  OPNsense: {len(ports)} Interfaces mit Traffic-Zählern")
+    return ports
+
+
 def dns_name(ip, server):
     """Reverse-Lookup, bevorzugt gegen den konfigurierten Server (der
     Domaincontroller ist das DNS — die OPNsense macht kein DHCP)."""
@@ -794,6 +837,7 @@ def sammellauf(cfg, verbose):
     # Gateway-Adresse/-MAC schon hier bestimmen (braucht der Uplink-Rückfall
     # unten UND der Firewall-Node in 3c).
     fw_ip = fw_mac = ""
+    fw_key, fw_ports = None, {}
     if cfg.opnsense is not None:
         fw_ip = (cfg.opnsense.get("firewall_ip", "")
                  or urllib.parse.urlsplit(cfg.opnsense["url"]).hostname or "")
@@ -860,6 +904,11 @@ def sammellauf(cfg, verbose):
         else:
             nodes[fw_key].update({"art": "firewall", "status": "aktiv", "fehlversuche": 0})
         gesehen.add(fw_key)
+
+        # Interfaces der Firewall als Ports ihres Nodes — Raten aus der
+        # Zähler-Differenz wie bei den Switches (gemeinsamer State).
+        fw_ports = opnsense_interfaces(cfg, verbose)
+        raten_berechnen(state, fw_key, fw_ports, jetzt)
 
         if fw_mac and fw_mac in fdb_lookup:
             _anzahl, sw_key, port_name = fdb_lookup[fw_mac]
@@ -956,6 +1005,11 @@ def sammellauf(cfg, verbose):
         if paar not in kanten_gesehen:
             kanten_gesehen.add(paar)
             links_csv.append(link)
+
+    for index, port in fw_ports.items():   # Firewall-Interfaces (ohne VLANs)
+        ports_csv.append([fw_key, index, port["name"], port["oper"], port["admin"],
+                          port["speed"], port["inOctets"], port["outOctets"],
+                          zeitstempel, port["inBps"], port["outBps"], None, "", ""])
 
     # 5) Hochladen: Staging leeren -> freebcp -> MERGE
     csv_dir = os.path.join(cfg.state_dir, "csv")
