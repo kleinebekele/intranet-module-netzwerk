@@ -1002,6 +1002,41 @@ def sammellauf(cfg, verbose):
     return 0
 
 
+def opnsense_erkunden(cfg, pfad):
+    """Kandidaten-Endpunkte der OPNsense-API durchprobieren und die Antwort-
+    Struktur kompakt zeigen — Einmal-Werkzeug, um die Quelle für den
+    Interface-Traffic zu finden (Gegenstück zu --wlan-erkunden).
+
+    Ohne Argument: bekannte Kandidaten der Reihe nach. Mit Pfad-Argument
+    (z. B. /api/diagnostics/traffic/interface): nur diesen, dafür mehr Inhalt."""
+    if cfg.opnsense is None:
+        sys.exit("FEHLER: Abschnitt [opnsense] fehlt in der Konfiguration.")
+
+    kandidaten = [pfad] if pfad else [
+        "/api/diagnostics/traffic/interface",
+        "/api/diagnostics/interface/get_interface_statistics",
+        "/api/diagnostics/interface/get_interface_names",
+        "/api/diagnostics/interface/get_interface_config",
+        "/api/interfaces/overview/interfaces_info",
+        "/api/interfaces/overview/export",
+    ]
+    grenze = 4000 if pfad else 900
+
+    for p in kandidaten:
+        try:
+            daten = opnsense_abfragen(cfg, p)
+        except Exception as fehler:
+            log(f"{p}: FEHLER {fehler}")
+            continue
+        log(f"{p}: OK ({type(daten).__name__})")
+        if isinstance(daten, dict):
+            log(f"  Schluessel: {', '.join(list(daten.keys())[:25])}")
+        elif isinstance(daten, list):
+            log(f"  Liste mit {len(daten)} Eintraegen")
+        log("  " + json.dumps(daten, ensure_ascii=False)[:grenze])
+    return 0
+
+
 def wlan_erkunden(cfg, unter_oid):
     """Den Enterprise-Baum des WLAN-Controllers walken und die gefundenen
     Tabellen kompakt zeigen — Einmal-Werkzeug, um die OIDs der AP- und
@@ -1047,6 +1082,10 @@ def main():
                         metavar="OID",
                         help="Enterprise-Baum des WLAN-Controllers walken (OID-Suche); "
                              "mit OID-Argument: diesen Ast spaltenweise zeigen")
+    parser.add_argument("--opnsense-erkunden", nargs="?", const="", default=None,
+                        metavar="PFAD",
+                        help="OPNsense-API-Endpunkte fuer Interface-Traffic durchprobieren; "
+                             "mit Pfad-Argument: nur diesen, dafuer ausfuehrlicher")
     parser.add_argument("--config", default=CONFIG_PFAD)
     args = parser.parse_args()
 
@@ -1060,6 +1099,8 @@ def main():
         return 0 if ok else 1
     if args.wlan_erkunden is not None:
         return wlan_erkunden(cfg, args.wlan_erkunden)
+    if args.opnsense_erkunden is not None:
+        return opnsense_erkunden(cfg, args.opnsense_erkunden)
     return sammellauf(cfg, args.verbose)
 
 
