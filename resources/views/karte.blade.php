@@ -21,6 +21,11 @@
                 @elseif ($quelle !== 'mssql')
                     <div class="text-red-700 font-semibold">⚠ Datenquelle: {{ $quelle }}</div>
                 @endif
+                <div class="ml-auto flex items-center gap-3 text-xs text-gray-500">
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-green-500"></span>online</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-red-400"></span>offline</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-400"></span>entdeckt</span>
+                </div>
             </div>
 
             @if ($entdeckt > 0)
@@ -63,14 +68,18 @@
                         Diese Verbindungen passen nicht in den Baum (Ring oder Redundanz) – sie existieren
                         zusätzlich zu den oben gezeigten Wegen.
                     </p>
-                    <ul class="space-y-1">
+                    <ul class="space-y-1.5">
                         @foreach ($quer as $q)
-                            <li class="text-gray-700">
-                                <span class="font-medium">{{ $q['von']->name ?? $q['von']->ip }}</span>
-                                @if ($q['vonPort'])<span class="text-gray-400 font-mono text-xs">({{ $q['vonPort'] }})</span>@endif
-                                ⇄
-                                <span class="font-medium">{{ $q['zu']->name ?? $q['zu']->ip }}</span>
-                                @if ($q['zuPort'])<span class="text-gray-400 font-mono text-xs">({{ $q['zuPort'] }})</span>@endif
+                            <li class="flex flex-wrap items-center gap-1.5 text-gray-700">
+                                <span class="inline-flex items-center gap-1.5 rounded bg-gray-100 px-2 py-0.5">
+                                    <span class="font-medium">{{ $q['von']->name ?? $q['von']->ip }}</span>
+                                    @if ($q['vonPort'])<span class="text-gray-400 font-mono text-xs">{{ $q['vonPort'] }}</span>@endif
+                                </span>
+                                <span class="text-gray-400">⇄</span>
+                                <span class="inline-flex items-center gap-1.5 rounded bg-gray-100 px-2 py-0.5">
+                                    <span class="font-medium">{{ $q['zu']->name ?? $q['zu']->ip }}</span>
+                                    @if ($q['zuPort'])<span class="text-gray-400 font-mono text-xs">{{ $q['zuPort'] }}</span>@endif
+                                </span>
                             </li>
                         @endforeach
                     </ul>
