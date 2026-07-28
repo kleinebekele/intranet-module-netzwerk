@@ -41,6 +41,7 @@ class KartenDaten
                 $nodes = $db->select("SELECT id, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
                 $links = $db->select("SELECT von_node_id, von_port, zu_node_id, zu_port, zu_fremd_mac, zu_fremd_name FROM {$schema}.network_links");
                 $ports = $db->select("SELECT node_id, operStatus, inBps, outBps FROM {$schema}.network_ports");
+                $geraete = $db->select("SELECT node_id, ip, mac, hostname, port_name, verbunden_via, ssid, lastSeen FROM {$schema}.network_devices");
             } catch (Throwable $e) {
                 report($e);
 
@@ -70,6 +71,7 @@ class KartenDaten
 
             $n->kinder = [];       // [['knoten' => object, 'vonPort' => ?string, 'zuPort' => ?string], …]
             $n->fremde = [];       // LLDP-Nachbarn ohne eigenen Node (PCs hinter unmanaged Verteilern)
+            $n->geraete = [];      // zugeordnete Endgeräte (Phase 3: node_id an network_devices)
             $n->portsGesamt = 0;
             $n->portsAktiv = 0;
             $n->bps = 0;           // Summe der aktuellen Raten aller aktiven Ports (bit/s)
@@ -79,6 +81,38 @@ class KartenDaten
             }
 
             $beiId[$n->id] = $n;
+        }
+
+        // ── Endgeräte an ihren Knoten hängen ──────────────────────────────────
+        if ($quelle === 'demo') {
+            $geraete = [];
+            foreach ($beiId as $id => $n) {
+                foreach (DemoDaten::knotenGeraete($id) as $g) {
+                    $g->node_id = $id;
+                    $geraete[] = $g;
+                }
+            }
+        }
+        foreach ($geraete as $g) {
+            $nodeRoh = trim((string) ($g->node_id ?? ''));
+            $node = $nodeRoh === '' ? null : ($beiId[(int) $nodeRoh] ?? null);
+            if ($node === null) {
+                continue;
+            }
+            $g->hostname = $this->leerZuNull($g->hostname);
+            $g->mac = $this->leerZuNull($g->mac);
+            $g->ip = trim((string) $g->ip);
+            $g->anzeige = $g->hostname ?? $g->ip;
+            $gesehenRoh = trim((string) ($g->lastSeen ?? ''));
+            $g->online = $gesehenRoh !== '' && Carbon::parse($gesehenRoh)->greaterThanOrEqualTo($grenze);
+            $ssid = $this->leerZuNull($g->ssid);
+            $g->anschluss = ($this->leerZuNull($g->verbunden_via) ?? 'lan') === 'wlan'
+                ? 'WLAN'.($ssid !== null ? ' ('.$ssid.')' : '')
+                : $this->leerZuNull($g->port_name);
+            $node->geraete[] = $g;
+        }
+        foreach ($beiId as $n) {
+            usort($n->geraete, fn ($x, $y) => strnatcasecmp($x->anzeige, $y->anzeige));
         }
 
         // ── Port-Zahlen je Knoten aufsummieren ────────────────────────────────
