@@ -21,7 +21,7 @@ class GeraeteMeta
     public static function nachschlagen(): Closure
     {
         try {
-            $alle = Geraet::with(['typ', 'standort'])->get();
+            $alle = Geraet::with(['typ', 'gebaeude', 'stockwerk', 'raum'])->get();
         } catch (Throwable) {
             return fn () => null;
         }
@@ -66,7 +66,7 @@ class GeraeteMeta
         return (object) [
             'typ' => $typ,
             'erkannt' => $erkannt,
-            'standort' => $pflege?->standort?->bezeichnung(),
+            'standort' => $pflege?->standortBezeichnung(),
             'info' => $pflege?->info,
         ];
     }

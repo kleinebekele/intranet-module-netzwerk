@@ -47,19 +47,23 @@
                     </div>
 
                     <div>
-                        <x-input-label for="standort_id" value="Standort" />
-                        <select id="standort_id" name="standort_id"
+                        <x-input-label for="standort" value="Standort" />
+                        <select id="standort" name="standort"
                                 class="mt-1 block w-full sm:max-w-md rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <option value="">— kein Standort —</option>
-                            @foreach ($standorte as $standort)
-                                <option value="{{ $standort->id }}" @selected((int) old('standort_id', $geraet?->standort_id) === $standort->id)>{{ $standort->bezeichnung() }}</option>
+                            @foreach ($standortOptionen as $gruppe)
+                                <optgroup label="{{ $gruppe['label'] }}">
+                                    @foreach ($gruppe['optionen'] as $option)
+                                        <option value="{{ $option['wert'] }}" @selected(old('standort', $standortWert) === $option['wert'])>{{ $option['text'] }}</option>
+                                    @endforeach
+                                </optgroup>
                             @endforeach
                         </select>
                         <p class="mt-1 text-xs text-gray-400">
-                            Standorte pflegst du unter
+                            Ganzes Gebäude, ein Stockwerk oder ein Raum — die Hierarchie pflegst du unter
                             <a href="{{ route('module.netzwerk.standorte') }}" class="underline hover:text-gray-600">Netzwerk → Standorte</a>.
                         </p>
-                        <x-input-error :messages="$errors->get('standort_id')" class="mt-2" />
+                        <x-input-error :messages="$errors->get('standort')" class="mt-2" />
                     </div>
 
                     <div>

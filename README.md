@@ -14,14 +14,17 @@ Nachbarn, Link zum Webinterface des Geräts) – verlinkt aus Karte und
 Geräteliste.
 
 **Pflege-Daten:** Zu jedem Gerät (Endgerät wie Infrastruktur-Knoten) lassen
-sich **Gerätetyp**, **Standort** (Gebäude/Stockwerk/Raum) und ein freies
-**Info-Feld** hinterlegen – Stift-Symbol in der Geräteliste bzw. „bearbeiten"
-auf der Knoten-Detailseite. Typen und Standorte verwaltet je ein eigener
-Menüpunkt (CRUD). Diese Daten liegen in der **Instanz-Datenbank**
-(`netzwerk_geraetetypen`, `netzwerk_standorte`, `netzwerk_geraete`, verknüpft
-lose über MAC bzw. IP) – die MSSQL-Quelle bleibt read-only. Viele Typen
-erkennt das Modul automatisch (Knoten-Art, Hersteller, Hostname); erkannte
-Typen erscheinen kursiv und werden beim Speichern im Formular übernommen.
+sich **Gerätetyp**, **Standort** und ein freies **Info-Feld** hinterlegen –
+Stift-Symbol in der Geräteliste bzw. „bearbeiten" auf der Knoten-Detailseite.
+Standorte sind eine **Hierarchie** (Gebäude → Stockwerke → Räume, jede Ebene
+einzeln pflegbar, Räume per Komma in Serie); am Gerät wählt man einen Punkt
+daraus (ganzes Gebäude, Stockwerk oder Raum). Typen und Standorte verwaltet
+je ein eigener Menüpunkt (CRUD). Diese Daten liegen in der
+**Instanz-Datenbank** (`netzwerk_geraetetypen`, `netzwerk_gebaeude`,
+`netzwerk_stockwerke`, `netzwerk_raeume`, `netzwerk_geraete`, verknüpft lose
+über MAC bzw. IP) – die MSSQL-Quelle bleibt read-only. Viele Typen erkennt
+das Modul automatisch (Knoten-Art, Hersteller, Hostname); erkannte Typen
+erscheinen kursiv und werden beim Speichern im Formular übernommen.
 
 Das Modul **liest nur**. Erhoben werden die Daten von einem externen Collector
 (bei uns: ein Raspberry Pi im Netz, der per nmap und SNMP scannt) und in eine

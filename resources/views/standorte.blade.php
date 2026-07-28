@@ -14,77 +14,125 @@
 
             <div class="bg-white shadow-sm sm:rounded-lg p-4 sm:p-6">
                 <p class="text-sm text-gray-500 mb-4">
-                    Standorte stehen im Bearbeiten-Formular jedes Geräts zur Auswahl.
-                    Nur das Gebäude ist Pflicht – Stockwerk und Raum nach Bedarf.
+                    Standorte sind eine Hierarchie: <b>Gebäude → Stockwerke → Räume</b>. Am Gerät
+                    wählst du dann einen Punkt daraus (ganzes Gebäude, ein Stockwerk oder ein Raum).
+                    Räume lassen sich mit Kommas in Serie anlegen („R 101, R 102, R 103").
                 </p>
-                <form method="POST" action="{{ route('module.netzwerk.standorte.store') }}" class="flex flex-wrap items-center gap-2">
+                <form method="POST" action="{{ route('module.netzwerk.standorte.gebaeude.store') }}" class="flex flex-wrap items-center gap-2">
                     @csrf
-                    <x-text-input name="gebaeude" :value="old('gebaeude')" placeholder="Gebäude *" class="block" required />
-                    <x-text-input name="stockwerk" :value="old('stockwerk')" placeholder="Stockwerk" class="block" />
-                    <x-text-input name="raum" :value="old('raum')" placeholder="Raum" class="block" />
+                    <x-text-input name="name" :value="old('name')" placeholder="Neues Gebäude …" class="block" required />
                     <button type="submit"
                             class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
                         <x-module-icon name="plus" class="text-base" />
-                        Anlegen
+                        Gebäude anlegen
                     </button>
                 </form>
             </div>
 
-            <div class="bg-white shadow-sm sm:rounded-lg overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="text-left text-gray-500 border-b border-gray-200 bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-2 font-medium">Gebäude</th>
-                                <th class="px-4 py-2 font-medium">Stockwerk</th>
-                                <th class="px-4 py-2 font-medium">Raum</th>
-                                <th class="px-4 py-2 font-medium">zugewiesen</th>
-                                <th class="px-4 py-2 font-medium text-right">Aktionen</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @forelse ($standorte as $standort)
-                                <tr>
-                                    <td class="px-4 py-2">
-                                        <form method="POST" action="{{ route('module.netzwerk.standorte.update', $standort) }}"
-                                              id="standort-{{ $standort->id }}">
-                                            @csrf
-                                            @method('PUT')
-                                            <x-text-input name="gebaeude" :value="$standort->gebaeude" class="block" required />
-                                        </form>
-                                    </td>
-                                    <td class="px-4 py-2">
-                                        <x-text-input name="stockwerk" :value="$standort->stockwerk" form="standort-{{ $standort->id }}" class="block" />
-                                    </td>
-                                    <td class="px-4 py-2">
-                                        <x-text-input name="raum" :value="$standort->raum" form="standort-{{ $standort->id }}" class="block" />
-                                    </td>
-                                    <td class="px-4 py-2 text-gray-500 whitespace-nowrap">
-                                        {{ $standort->geraete_count }} {{ $standort->geraete_count === 1 ? 'Gerät' : 'Geräte' }}
-                                    </td>
-                                    <td class="px-4 py-2 text-right whitespace-nowrap">
-                                        <button type="submit" form="standort-{{ $standort->id }}" title="Speichern"
-                                                class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
-                                            <x-module-icon name="save" class="text-base" />
-                                        </button>
-                                        <form method="POST" action="{{ route('module.netzwerk.standorte.destroy', $standort) }}" class="inline"
-                                              onsubmit="return confirm('Diesen Standort löschen? Zugewiesene Geräte verlieren ihren Standort.');">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" title="Löschen"
-                                                    class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-700">
-                                                <x-module-icon name="trash" class="text-base" />
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="5" class="px-4 py-6 text-gray-500">Noch keine Standorte angelegt.</td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
+            @forelse ($gebaeude as $geb)
+                <div class="bg-white shadow-sm sm:rounded-lg p-4 sm:p-6 space-y-4">
+
+                    {{-- Kopf: Gebäude umbenennen / löschen --}}
+                    <div class="flex flex-wrap items-center gap-2">
+                        <x-module-icon name="home" class="text-xl text-gray-400" />
+                        <form method="POST" action="{{ route('module.netzwerk.standorte.gebaeude.update', $geb) }}" class="inline-flex items-center gap-2">
+                            @csrf
+                            @method('PUT')
+                            <x-text-input name="name" :value="$geb->name" class="block font-semibold" required />
+                            <button type="submit" title="Speichern"
+                                    class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                                <x-module-icon name="save" class="text-base" />
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ route('module.netzwerk.standorte.gebaeude.destroy', $geb) }}" class="inline"
+                              onsubmit="return confirm('Dieses Gebäude samt Stockwerken und Räumen löschen? Zugewiesene Geräte verlieren ihren Standort.');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" title="Gebäude löschen"
+                                    class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-700">
+                                <x-module-icon name="trash" class="text-base" />
+                            </button>
+                        </form>
+                        <span class="text-sm text-gray-400">{{ $geb->geraete_count }} {{ $geb->geraete_count === 1 ? 'Gerät' : 'Geräte' }}</span>
+                    </div>
+
+                    {{-- Stockwerke mit ihren Räumen --}}
+                    @foreach ($geb->stockwerke as $stockwerk)
+                        <div class="border-l-4 border-gray-200 pl-3 space-y-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <form method="POST" action="{{ route('module.netzwerk.standorte.stockwerke.update', $stockwerk) }}" class="inline-flex items-center gap-2">
+                                    @csrf
+                                    @method('PUT')
+                                    <x-text-input name="name" :value="$stockwerk->name" class="block text-sm" required />
+                                    <button type="submit" title="Speichern"
+                                            class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                                        <x-module-icon name="save" class="text-base" />
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('module.netzwerk.standorte.stockwerke.destroy', $stockwerk) }}" class="inline"
+                                      onsubmit="return confirm('Dieses Stockwerk samt Räumen löschen? Zugewiesene Geräte verlieren Stockwerk und Raum.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" title="Stockwerk löschen"
+                                            class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-700">
+                                        <x-module-icon name="trash" class="text-base" />
+                                    </button>
+                                </form>
+                                @if ($stockwerk->geraete_count > 0)
+                                    <span class="text-xs text-gray-400">{{ $stockwerk->geraete_count }} Geräte</span>
+                                @endif
+                            </div>
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                @foreach ($stockwerk->raeume as $raum)
+                                    @include('netzwerk::partials.raum-chip', ['raum' => $raum])
+                                @endforeach
+                                <form method="POST" action="{{ route('module.netzwerk.standorte.raeume.store', $geb) }}" class="inline-flex items-center gap-1">
+                                    @csrf
+                                    <input type="hidden" name="stockwerk_id" value="{{ $stockwerk->id }}">
+                                    <x-text-input name="name" placeholder="+ Raum (Kommas = mehrere)" class="block w-56 text-sm" required />
+                                    <button type="submit" title="Raum/Räume anlegen"
+                                            class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                                        <x-module-icon name="plus" class="text-base" />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    {{-- Räume direkt am Gebäude (ohne Stockwerk) --}}
+                    <div class="border-l-4 border-gray-100 pl-3 space-y-2">
+                        <div class="text-xs font-medium uppercase tracking-wide text-gray-400">Räume ohne Stockwerk</div>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            @foreach ($geb->raeume as $raum)
+                                @include('netzwerk::partials.raum-chip', ['raum' => $raum])
+                            @endforeach
+                            <form method="POST" action="{{ route('module.netzwerk.standorte.raeume.store', $geb) }}" class="inline-flex items-center gap-1">
+                                @csrf
+                                <x-text-input name="name" placeholder="+ Raum (Kommas = mehrere)" class="block w-56 text-sm" required />
+                                <button type="submit" title="Raum/Räume anlegen"
+                                        class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                                    <x-module-icon name="plus" class="text-base" />
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    {{-- Neues Stockwerk --}}
+                    <form method="POST" action="{{ route('module.netzwerk.standorte.stockwerke.store', $geb) }}" class="flex flex-wrap items-center gap-1">
+                        @csrf
+                        <x-text-input name="name" placeholder="+ Stockwerk …" class="block w-48 text-sm" required />
+                        <button type="submit" title="Stockwerk anlegen"
+                                class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                            <x-module-icon name="plus" class="text-base" />
+                        </button>
+                    </form>
+
                 </div>
-            </div>
+            @empty
+                <div class="bg-white shadow-sm sm:rounded-lg p-6 text-gray-500">
+                    Noch keine Gebäude angelegt — oben das erste anlegen, danach Stockwerke und Räume darin.
+                </div>
+            @endforelse
 
         </div>
     </div>

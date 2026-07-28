@@ -43,7 +43,13 @@ Route::middleware(['web', 'auth'])
         Route::put('/typen/{typ}', [TypenController::class, 'update'])->whereNumber('typ')->name('typen.update');
         Route::delete('/typen/{typ}', [TypenController::class, 'destroy'])->whereNumber('typ')->name('typen.destroy');
         Route::get('/standorte', [StandorteController::class, 'index'])->name('standorte');
-        Route::post('/standorte', [StandorteController::class, 'store'])->name('standorte.store');
-        Route::put('/standorte/{standort}', [StandorteController::class, 'update'])->whereNumber('standort')->name('standorte.update');
-        Route::delete('/standorte/{standort}', [StandorteController::class, 'destroy'])->whereNumber('standort')->name('standorte.destroy');
+        Route::post('/standorte/gebaeude', [StandorteController::class, 'gebaeudeStore'])->name('standorte.gebaeude.store');
+        Route::put('/standorte/gebaeude/{gebaeude}', [StandorteController::class, 'gebaeudeUpdate'])->whereNumber('gebaeude')->name('standorte.gebaeude.update');
+        Route::delete('/standorte/gebaeude/{gebaeude}', [StandorteController::class, 'gebaeudeDestroy'])->whereNumber('gebaeude')->name('standorte.gebaeude.destroy');
+        Route::post('/standorte/gebaeude/{gebaeude}/stockwerke', [StandorteController::class, 'stockwerkStore'])->whereNumber('gebaeude')->name('standorte.stockwerke.store');
+        Route::put('/standorte/stockwerke/{stockwerk}', [StandorteController::class, 'stockwerkUpdate'])->whereNumber('stockwerk')->name('standorte.stockwerke.update');
+        Route::delete('/standorte/stockwerke/{stockwerk}', [StandorteController::class, 'stockwerkDestroy'])->whereNumber('stockwerk')->name('standorte.stockwerke.destroy');
+        Route::post('/standorte/gebaeude/{gebaeude}/raeume', [StandorteController::class, 'raumStore'])->whereNumber('gebaeude')->name('standorte.raeume.store');
+        Route::put('/standorte/raeume/{raum}', [StandorteController::class, 'raumUpdate'])->whereNumber('raum')->name('standorte.raeume.update');
+        Route::delete('/standorte/raeume/{raum}', [StandorteController::class, 'raumDestroy'])->whereNumber('raum')->name('standorte.raeume.destroy');
     });
