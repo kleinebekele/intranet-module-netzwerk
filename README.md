@@ -85,9 +85,17 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 2. ✅ Netzwerkkarte aus LLDP-Daten (Topologie-Baum, Discovery unbekannter Switches)
 3. ✅ Gerät-zu-Switchport-Zuordnung (FDB) und WLAN (WC7500: APs als Karten-Knoten,
    Clients mit „AP + SSID") – Spalte „Anschluss" in der Geräteliste
-4. ✅ OPNsense-ARP + DNS-Namen (MACs/Namen über alle Netze, Firewall auf der Karte)
+4. ✅ OPNsense-ARP + DNS-Namen (MACs/Namen über alle Netze, Firewall auf der Karte;
+   die Firewall-Interfaces erscheinen als Ports ihres Knotens)
 5. ✅ Traffic-Statistiken – Seite „Statistik": Verläufe je Port (24 h / 7 Tage / 30 Tage)
    aus `network_port_stats`, serverseitig gerenderte SVG-Charts
+6. ✅ Alarme – ist die Ekkon-Basis (`do1emu/module-ekkon`) installiert, registriert das
+   Modul den Task **Netzwerk/Alarme**: meldet über die Ekkon-Benachrichtigungsrouten,
+   wenn ein eingebundener Knoten nicht mehr antwortet (Schwelle einstellbar), wieder
+   erreichbar ist (abschaltbar) oder ein neues Gerät entdeckt wurde. Der erste Lauf
+   merkt sich nur die Ausgangslage. ⚠️ Ohne eingerichtete Route (Ekkon →
+   Benachrichtigungen) erreichen die Meldungen niemanden — der Task weist in seiner
+   Lauf-Historie darauf hin.
 
 Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz
 (Erst-Einsatz: Waldorfschule).

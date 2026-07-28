@@ -12,6 +12,9 @@
     "require": {
         "php": "^8.3"
     },
+    "suggest": {
+        "do1emu/module-ekkon": "Aktiviert den Alarm-Task Netzwerk/Alarme (Meldungen über die Ekkon-Benachrichtigungsrouten)."
+    },
     "autoload": {
         "psr-4": {
             "Intranet\\Modules\\Netzwerk\\": "src/"

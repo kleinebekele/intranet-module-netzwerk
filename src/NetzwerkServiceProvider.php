@@ -38,5 +38,21 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
         // Die MSSQL-Quelle als Laravel-Connection. Der Name kommt aus der
         // Config, damit er bei Bedarf zur Datenquelle passen darf.
         config(['database.connections.'.Netzwerk::connection() => config('netzwerk.mssql')]);
+
+        // Kür: Ist die Ekkon-Basis installiert, meldet das Modul seinen
+        // Alarm-Task an (Netzwerk/Alarme). Ohne Ekkon fehlt nur der Task —
+        // alles andere läuft unverändert (weiche Abhängigkeit, siehe suggest).
+        // Der Task braucht Task-Einstellungen (Basis ≥ v1.1) — eine ältere
+        // Basis bekommt ihn gar nicht erst, statt am fehlenden einstellung()
+        // zu scheitern.
+        if (class_exists(\Intranet\Modules\Ekkon\Support\TaskRegistry::class)
+                && method_exists(\Intranet\Modules\Ekkon\Tasks\EkkonTask::class, 'einstellung')) {
+            $this->app->singletonIf(\Intranet\Modules\Ekkon\Support\TaskRegistry::class);
+            $this->app->make(\Intranet\Modules\Ekkon\Support\TaskRegistry::class)->addSource(
+                $this->moduleBasePath().'/src/Tasks',
+                __NAMESPACE__.'\\Tasks',
+                'do1emu/module-netzwerk',
+            );
+        }
     }
 }
