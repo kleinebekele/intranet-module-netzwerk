@@ -118,6 +118,22 @@ eigener Node auf der Karte; ihre Kante zum Switch leitet der Collector aus der
 FDB ab (der Port, an dem ihre MAC gelernt wurde). DNS-Antworten werden eine
 Stunde im State zwischengespeichert.
 
+## VLANs je Port
+
+Jeder Sammellauf liest zusätzlich die Q-BRIDGE-VLAN-Tabellen der Switches
+(`dot1qVlanStaticTable`, Rückfall auf die Current-Tabelle) plus den PVID je
+Port und schreibt die Mitgliedschaften in `network_ports.vlanUntagged` /
+`vlanTagged` (Komma-Listen; `pvid` zusätzlich als Zahl). Tagged = in der
+Egress-, aber nicht in der Untagged-Maske. Geräte ohne Q-BRIDGE (GS110TPv3)
+liefern nichts — dort bleiben die Spalten leer, und ein einzelner
+SNMP-Aussetzer wischt den letzten bekannten Stand nicht weg (COALESCE im
+MERGE).
+
+**Update-Hinweis:** Collector-Script und SQL-Dateien zusammen installieren und
+direkt danach `--init-db` ausführen (legt die neuen Spalten an). Startet genau
+in diesem Moment ein Cron-Lauf, scheitert höchstens dieser eine — der nächste
+läuft wieder sauber durch.
+
 ## Phase 5: Traffic-Historie
 
 `network_port_stats` bekommt je Lauf und **aktivem** Port eine Zeile mit den

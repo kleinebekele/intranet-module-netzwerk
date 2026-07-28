@@ -198,6 +198,11 @@ class DemoDaten
                 'speedMbit' => $istAktiv ? ($i <= 2 ? 10000 : 1000) : 0,
                 'inBps' => $istAktiv ? intdiv($bpsGesamt, $aktiv * 2) : null,
                 'outBps' => $istAktiv ? intdiv($bpsGesamt, $aktiv * 2) : null,
+                // VLAN-Muster wie im echten Netz: die 10G-Ports sind Trunks
+                // (alles tagged), normale Ports untagged in 1, jeder vierte
+                // im Geräte-VLAN 20, jeder fünfte zusätzlich mit Telefon-VLAN.
+                'vlanUntagged' => (string) ($i % 4 === 0 ? 20 : 1),
+                'vlanTagged' => $i <= 2 ? '10,20,30' : ($i % 5 === 0 ? '30' : null),
             ];
         }
 

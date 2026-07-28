@@ -59,7 +59,10 @@ USING (
         CONVERT(bigint, NULLIF(s.outOctets, ''))            AS outOctets,
         CONVERT(datetime2, NULLIF(s.zaehlerStand, ''), 120) AS zaehlerStand,
         CONVERT(bigint, NULLIF(s.inBps, ''))                AS inBps,
-        CONVERT(bigint, NULLIF(s.outBps, ''))               AS outBps
+        CONVERT(bigint, NULLIF(s.outBps, ''))               AS outBps,
+        CONVERT(int,    NULLIF(s.pvid, ''))                 AS pvid,
+        NULLIF(s.vlanUntagged, '')                          AS vlanUntagged,
+        NULLIF(s.vlanTagged, '')                            AS vlanTagged
     FROM __SCHEMA__.network_ports_stage s
     JOIN __SCHEMA__.network_nodes n ON n.matchKey = s.node_matchKey
     WHERE NULLIF(s.ifIndex, '') IS NOT NULL
@@ -74,13 +77,21 @@ WHEN MATCHED THEN UPDATE SET
     outOctets    = quelle.outOctets,
     zaehlerStand = quelle.zaehlerStand,
     inBps        = quelle.inBps,
-    outBps       = quelle.outBps
+    outBps       = quelle.outBps,
+    -- VLANs sind Konfiguration: ein leeres Ergebnis (SNMP-Timeout, Gerät
+    -- ohne Q-BRIDGE) soll den letzten bekannten Stand nicht wegwischen.
+    pvid         = COALESCE(quelle.pvid, ziel.pvid),
+    vlanUntagged = COALESCE(quelle.vlanUntagged, ziel.vlanUntagged),
+    vlanTagged   = CASE WHEN quelle.vlanUntagged IS NULL
+                        THEN ziel.vlanTagged ELSE quelle.vlanTagged END
 WHEN NOT MATCHED THEN INSERT
     (node_id, ifIndex, name, operStatus, adminStatus, speedMbit,
-     inOctets, outOctets, zaehlerStand, inBps, outBps)
+     inOctets, outOctets, zaehlerStand, inBps, outBps,
+     pvid, vlanUntagged, vlanTagged)
     VALUES (quelle.node_id, quelle.ifIndex, quelle.name, quelle.operStatus,
             quelle.adminStatus, quelle.speedMbit, quelle.inOctets,
-            quelle.outOctets, quelle.zaehlerStand, quelle.inBps, quelle.outBps);
+            quelle.outOctets, quelle.zaehlerStand, quelle.inBps, quelle.outBps,
+            quelle.pvid, quelle.vlanUntagged, quelle.vlanTagged);
 GO
 
 -- ---------------------------------------------------------------- Links ----

@@ -29,6 +29,9 @@
                         <span class="text-xs font-semibold text-green-800 bg-green-100 rounded px-1.5 py-0.5">online</span>
                     @endif
                     <span class="ml-auto flex items-center gap-4">
+                        @if ($knoten->webinterface)
+                            <a href="{{ $knoten->webinterface }}" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Webinterface ↗</a>
+                        @endif
                         @if (count($ports) > 0)
                             <a href="{{ route('module.netzwerk.statistik', ['knoten' => $knoten->id]) }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Statistik</a>
                         @endif
@@ -61,6 +64,7 @@
                     <p class="text-sm text-gray-500 mb-3">
                         Grün = Verbindung aktiv, grau = frei/aus. „Uplink" führt zu einem anderen
                         Infrastruktur-Gerät; darunter stehen die zuletzt an diesem Port gesehenen Geräte.
+                        VLANs je Port: „U" = untagged, „T" = tagged.
                     </p>
                     <div class="flex flex-wrap gap-2">
                         @foreach ($ports as $p)
@@ -78,6 +82,7 @@
                                     @endif
                                     @if ($p->rate)<span class="text-gray-700 font-medium">{{ $p->rate }}</span>@endif
                                     @if (! $aktiv && $p->adminStatus === 'down')<span>abgeschaltet</span>@endif
+                                    @if ($p->vlans !== '')<span title="U = untagged, T = tagged">VLAN {{ $p->vlans }}</span>@endif
                                 </div>
                                 @if (count($p->geraete) > 0)
                                     <div class="mt-1.5">

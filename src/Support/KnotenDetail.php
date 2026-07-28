@@ -35,7 +35,13 @@ class KnotenDetail
 
                 $nodes = $db->select("SELECT id, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
                 $links = $db->select("SELECT von_node_id, von_port, zu_node_id, zu_port, zu_fremd_mac, zu_fremd_name FROM {$schema}.network_links WHERE von_node_id = ? OR zu_node_id = ?", [$id, $id]);
-                $ports = $db->select("SELECT node_id, name, operStatus, adminStatus, speedMbit, inBps, outBps FROM {$schema}.network_ports WHERE node_id = ?", [$id]);
+                try {
+                    $ports = $db->select("SELECT node_id, name, operStatus, adminStatus, speedMbit, inBps, outBps, vlanUntagged, vlanTagged FROM {$schema}.network_ports WHERE node_id = ?", [$id]);
+                } catch (Throwable) {
+                    // Die VLAN-Spalten legt erst das Collector-Update an
+                    // (schema_vlan.sql) — bis dahin läuft die Seite ohne sie.
+                    $ports = $db->select("SELECT node_id, name, operStatus, adminStatus, speedMbit, inBps, outBps, NULL AS vlanUntagged, NULL AS vlanTagged FROM {$schema}.network_ports WHERE node_id = ?", [$id]);
+                }
                 $geraete = $db->select("SELECT ip, mac, hostname, vendor, port_name, verbunden_via, ssid, lastSeen FROM {$schema}.network_devices WHERE node_id = ?", [$id]);
             } catch (Throwable $e) {
                 report($e);
@@ -70,6 +76,10 @@ class KnotenDetail
         $knoten->online = $knoten->gesehen !== null && $knoten->gesehen->greaterThanOrEqualTo($grenze);
         $knoten->art ??= 'switch';
         $knoten->status ??= 'entdeckt';
+        // Verwaltungsoberfläche des Geräts: die OPNsense spricht nur https,
+        // die Netgear-Geräte melden sich auf http (und leiten ggf. selbst um).
+        $knoten->webinterface = $knoten->ip === null ? null
+            : ($knoten->art === 'firewall' ? 'https' : 'http').'://'.$knoten->ip;
 
         // ── Nachbarn: Kanten in beide Richtungen, dedupliziert je Partner ─────
         $nachbarn = [];
@@ -150,6 +160,7 @@ class KnotenDetail
             $p->adminStatus = trim((string) $p->adminStatus);
             $p->speedMbit = (int) $p->speedMbit;
             $p->rate = KartenDaten::rateText((int) $p->inBps + (int) $p->outBps);
+            $p->vlans = $this->vlanText($p);
             $p->uplink = $uplinkJePort[$p->name] ?? null;
             $p->geraete = $lanJePort[$p->name] ?? [];
             unset($lanJePort[$p->name]);
@@ -174,6 +185,25 @@ class KnotenDetail
             'weitere' => $weitere,
             'quelle' => $quelle,
         ];
+    }
+
+    /**
+     * Kompakte VLAN-Angabe eines Ports: erst untagged ("1U"), dann tagged
+     * ("10T, 20T") — die Schreibweise der Switch-Oberflächen. Leerstring,
+     * solange der Collector für das Gerät keine VLANs liefert (kein
+     * Q-BRIDGE oder Spalten noch nicht befüllt).
+     */
+    private function vlanText(object $p): string
+    {
+        $liste = fn (?string $roh): array => array_values(array_filter(
+            array_map('trim', explode(',', (string) $roh)),
+            fn (string $v) => $v !== '',
+        ));
+
+        return implode(', ', array_merge(
+            array_map(fn ($v) => $v.'U', $liste($p->vlanUntagged ?? null)),
+            array_map(fn ($v) => $v.'T', $liste($p->vlanTagged ?? null)),
+        ));
     }
 
     private function leerZuNull(mixed $wert): ?string

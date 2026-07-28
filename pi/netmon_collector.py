@@ -55,6 +55,11 @@ OID = {
     # Rückfallweg für Smart Switches ohne Q-BRIDGE (GS110TPv3: "Error in
     # packet"): klassische dot1d-FDB, Index NUR die MAC (ohne fdbId/VLAN).
     "fdbPortAlt":      ".1.3.6.1.2.1.17.4.3.1.2",
+    # VLANs (Q-BRIDGE): PVID je Bridge-Port, statische VLAN-Tabelle (Index =
+    # VLAN-ID) und die Current-Tabelle als Rückfall (Index <TimeMark>.<VLAN>).
+    "pvid":            ".1.3.6.1.2.1.17.7.1.4.5.1.1",
+    "vlanStatic":      ".1.3.6.1.2.1.17.7.1.4.3.1",
+    "vlanCurrent":     ".1.3.6.1.2.1.17.7.1.4.2.1",
 }
 
 # Spaltennummern innerhalb der LLDP-Nachbartabelle
@@ -214,6 +219,41 @@ def mac_format(oktetten):
     return ":".join(f"{b:02x}" for b in oktetten)
 
 
+def vlan_bitmap_ports(oktetten):
+    """Bridge-Portnummern aus einer 802.1Q-Portlisten-Bitmaske: Bit 0x80 des
+    ersten Oktetts = Bridge-Port 1, dann fortlaufend."""
+    ports = set()
+    for i, byte in enumerate(oktetten):
+        for bit in range(8):
+            if byte & (0x80 >> bit):
+                ports.add(i * 8 + bit + 1)
+    return ports
+
+
+def vlan_mitglieder(argumente, ip, verbose):
+    """VLAN-ID -> {"egress": Bridge-Ports, "untagged": Bridge-Ports} aus der
+    Q-BRIDGE. Erst die statische Tabelle (= Konfiguration, Index die VLAN-ID),
+    liefert die nichts, die Current-Tabelle (Index <TimeMark>.<VLAN>) — beide
+    Parser identisch, weil die VLAN-ID jeweils die LETZTE Index-Komponente
+    ist. Leeres Dict bei Geräten ohne Q-BRIDGE (GS110TPv3)."""
+    for basis, egress_spalte, untagged_spalte in ((OID["vlanStatic"], 2, 4),
+                                                  (OID["vlanCurrent"], 4, 5)):
+        vlans = {}
+        for oid, typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [basis], verbose) or []:
+            rest = oid[len(basis) + 1:].split(".")
+            if len(rest) < 2 or not rest[0].isdigit() or not rest[-1].isdigit():
+                continue
+            spalte, vlan_id = int(rest[0]), int(rest[-1])
+            if spalte not in (egress_spalte, untagged_spalte):
+                continue
+            eintrag = vlans.setdefault(vlan_id, {"egress": set(), "untagged": set()})
+            ziel = "egress" if spalte == egress_spalte else "untagged"
+            eintrag[ziel] |= vlan_bitmap_ports(wert_bytes(typ, roh))
+        if any(v["egress"] for v in vlans.values()):
+            return vlans
+    return {}
+
+
 # ------------------------------------------------------- Node abfragen ------
 def node_abfragen(cfg, ip, verbose):
     """Einen Switch komplett einsammeln. None = keine Antwort."""
@@ -342,6 +382,34 @@ def node_abfragen(cfg, ip, verbose):
         mac = ":".join(f"{int(x):02x}" for x in rest[-6:])
         fdb.setdefault(if_index, set()).add(mac)
     node["fdb"] = fdb
+
+    # ---- VLANs: untagged/tagged Mitgliedschaften je Port. Tagged = in der
+    #      Egress-Maske, aber nicht in der Untagged-Maske. Fehlt die
+    #      Untagged-Maske (oder das ganze Q-BRIDGE), bleibt als bester Wert
+    #      der PVID — das untagged Ingress-VLAN des Ports.
+    pvid_je_if = {}
+    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["pvid"]], verbose) or []:
+        nummer = oid.rpartition(".")[2]
+        if nummer.isdigit() and base_zu_if.get(int(nummer)) is not None:
+            pvid_je_if[base_zu_if[int(nummer)]] = wert_zahl(roh)
+
+    untagged_je_if, tagged_je_if = {}, {}
+    for vlan_id, m in vlan_mitglieder(argumente, ip, verbose).items():
+        for basisport in m["egress"]:
+            if_index = base_zu_if.get(basisport)
+            if if_index is None:    # CPU-Port o. ä.
+                continue
+            ziel = untagged_je_if if basisport in m["untagged"] else tagged_je_if
+            ziel.setdefault(if_index, set()).add(vlan_id)
+
+    for index, port in node["ports"].items():
+        untagged = untagged_je_if.get(index, set())
+        pvid = pvid_je_if.get(index)
+        if not untagged and pvid:
+            untagged = {pvid}
+        port["pvid"] = pvid
+        port["vlanUntagged"] = ",".join(str(v) for v in sorted(untagged))
+        port["vlanTagged"] = ",".join(str(v) for v in sorted(tagged_je_if.get(index, set())))
     return node
 
 
@@ -858,7 +926,8 @@ def sammellauf(cfg, verbose):
         for index, port in daten["ports"].items():
             ports_csv.append([key, index, port["name"], port["oper"], port["admin"],
                               port["speed"], port["inOctets"], port["outOctets"],
-                              zeitstempel, port["inBps"], port["outBps"]])
+                              zeitstempel, port["inBps"], port["outBps"],
+                              port["pvid"], port["vlanUntagged"], port["vlanTagged"]])
         for nachbar in daten["nachbarn"]:
             von_port = (daten["lokalePorts"].get(nachbar["lokalerPort"])
                         or f"Port {nachbar['lokalerPort']}")
@@ -985,7 +1054,8 @@ def main():
     if args.init_db:
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
                  for name in ("schema_phase2.sql", "schema_phase3.sql",
-                              "schema_phase4.sql", "schema_phase5.sql"))
+                              "schema_phase4.sql", "schema_phase5.sql",
+                              "schema_vlan.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
     if args.wlan_erkunden is not None:

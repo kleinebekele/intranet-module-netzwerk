@@ -8,7 +8,8 @@ aktueller Rate, Fremd-Nachbarn und Redundanz-Querverbindungen; neu entdeckte,
 noch nicht abfragbare Geräte erscheinen amber mit Einbindungs-Anleitung),
 *Geräte* (Endgeräte-Inventar aus dem Ping-Scan, je Netzsegment, mit Spalte
 „Anschluss") und je Knoten eine **Detailseite** (Portleiste mit Status/Speed/
-Rate/Uplinks, angeschlossene Geräte je Port, WLAN-Clients bei APs, Nachbarn) –
+Rate/Uplinks und VLANs („1U, 10T" = untagged/tagged), angeschlossene Geräte je
+Port, WLAN-Clients bei APs, Nachbarn, Link zum Webinterface des Geräts) –
 verlinkt aus Karte und Geräteliste.
 
 Das Modul **liest nur**. Erhoben werden die Daten von einem externen Collector
@@ -54,7 +55,9 @@ Gelesen werden aus `{schema}`:
 - `network_nodes` – Infrastruktur (Switches, APs, Controller, Firewall) mit
   `status` (`aktiv` | `entdeckt` | `stumm`)
 - `network_links` – LLDP-Kanten (inkl. Fremd-Nachbarn ohne eigenen Node)
-- `network_ports` – Ports je Node mit Status, Speed und aktueller Rate (bit/s)
+- `network_ports` – Ports je Node mit Status, Speed, aktueller Rate (bit/s)
+  und VLAN-Mitgliedschaften (`pvid`, `vlanUntagged`, `vlanTagged`; leer bei
+  Geräten ohne Q-BRIDGE-MIB)
 
 Das Schema samt Staging-Tabellen und MERGE liegt unter [pi/](pi/) beim
 Collector. „online" berechnet das Modul beim Lesen aus `lastSeen` (Standard:
