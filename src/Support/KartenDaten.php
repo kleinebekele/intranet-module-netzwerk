@@ -214,27 +214,31 @@ class KartenDaten
         }
 
         // ── LLDP-Fremdeinträge mit den zugeordneten Endgeräten zusammenführen ─
-        //    Gleiche MAC am selben Knoten = dasselbe Gerät: der Chip im Kasten
-        //    entfällt, und der LLDP-Name (sysName) ergänzt einen fehlenden
-        //    Hostnamen in der Geräte-Leiste. Übrig bleiben echte Nur-LLDP-
-        //    Nachbarn (kein Inventar-Eintrag, z. B. fremdes Management-Netz).
+        //    Gleiche MAC = dasselbe Gerät — verglichen über ALLE Knoten, denn
+        //    die FDB-Heuristik kann das Gerät einem anderen Switch zugeordnet
+        //    haben als dem, bei dem es sich per LLDP meldet. Taucht das Gerät
+        //    irgendwo als Chip auf, entfällt der Kasten-Eintrag; der LLDP-Name
+        //    (sysName) ergänzt dort einen fehlenden Hostnamen. Übrig bleiben
+        //    echte Nur-LLDP-Nachbarn ohne (zugeordneten) Inventar-Eintrag.
+        $zugeordnetNachMac = [];
         foreach ($beiId as $n) {
-            if ($n->fremde === [] || $n->geraete === []) {
-                continue;
-            }
-            $nachMac = [];
             foreach ($n->geraete as $g) {
                 if ($g->mac !== null) {
-                    $nachMac[mb_strtolower($g->mac)] = $g;
+                    $zugeordnetNachMac[mb_strtolower($g->mac)] ??= $g;
                 }
             }
-            $n->fremde = array_values(array_filter($n->fremde, function (array $f) use ($nachMac) {
+        }
+        foreach ($beiId as $n) {
+            if ($n->fremde === []) {
+                continue;
+            }
+            $n->fremde = array_values(array_filter($n->fremde, function (array $f) use ($zugeordnetNachMac) {
                 $mac = mb_strtolower((string) ($f['mac'] ?? ''));
-                if ($mac === '' || ! isset($nachMac[$mac])) {
+                if ($mac === '' || ! isset($zugeordnetNachMac[$mac])) {
                     return true;
                 }
-                if ($nachMac[$mac]->hostname === null) {
-                    $nachMac[$mac]->anzeige = $f['name'];
+                if ($zugeordnetNachMac[$mac]->hostname === null) {
+                    $zugeordnetNachMac[$mac]->anzeige = $f['name'];
                 }
 
                 return false;
