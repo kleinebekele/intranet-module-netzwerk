@@ -34,10 +34,14 @@
                                     <th class="px-4 py-2 font-medium">Status</th>
                                     <th class="px-4 py-2 font-medium">IP</th>
                                     <th class="px-4 py-2 font-medium">Hostname</th>
+                                    <th class="px-4 py-2 font-medium">Typ</th>
+                                    <th class="px-4 py-2 font-medium">Standort</th>
                                     <th class="px-4 py-2 font-medium">Hersteller</th>
                                     <th class="px-4 py-2 font-medium">MAC</th>
                                     <th class="px-4 py-2 font-medium">Anschluss</th>
+                                    <th class="px-4 py-2 font-medium">Info</th>
                                     <th class="px-4 py-2 font-medium">zuletzt gesehen</th>
+                                    <th class="px-4 py-2"></th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -54,6 +58,16 @@
                                         </td>
                                         <td class="px-4 py-2 font-mono whitespace-nowrap">{{ $g->ip }}</td>
                                         <td class="px-4 py-2">{{ $g->hostname ?? '—' }}</td>
+                                        <td class="px-4 py-2 whitespace-nowrap">
+                                            @if ($g->pflege->typ !== null && $g->pflege->erkannt)
+                                                <span class="italic text-gray-500" title="automatisch erkannt – beim Bearbeiten übernehmen">{{ $g->pflege->typ }}</span>
+                                            @elseif ($g->pflege->typ !== null)
+                                                {{ $g->pflege->typ }}
+                                            @else
+                                                <span class="text-gray-400">—</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-4 py-2 whitespace-nowrap">{{ $g->pflege->standort ?? '—' }}</td>
                                         <td class="px-4 py-2">{{ $g->vendor ?? '—' }}</td>
                                         <td class="px-4 py-2 font-mono text-xs whitespace-nowrap">{{ $g->mac ?? '—' }}</td>
                                         <td class="px-4 py-2 whitespace-nowrap"
@@ -71,8 +85,24 @@
                                                 <span class="text-gray-400">—</span>
                                             @endif
                                         </td>
+                                        <td class="px-4 py-2" @if ($g->pflege->info) title="{{ $g->pflege->info }}" @endif>
+                                            {{ $g->pflege->info !== null ? \Illuminate\Support\Str::limit($g->pflege->info, 40) : '—' }}
+                                        </td>
                                         <td class="px-4 py-2 text-gray-500 whitespace-nowrap">
                                             {{ $g->gesehen ? $g->gesehen->locale('de')->diffForHumans() : '—' }}
+                                        </td>
+                                        <td class="px-4 py-2 text-right whitespace-nowrap">
+                                            <a href="{{ route('module.netzwerk.geraet', array_filter([
+                                                    'mac' => $g->mac,
+                                                    'ip' => $g->ip,
+                                                    'anzeige' => $g->hostname ?? $g->ip,
+                                                    'erkannt' => $g->pflege->erkannt ? $g->pflege->typ : null,
+                                                    'zurueck' => request()->getRequestUri(),
+                                                ])) }}"
+                                               title="Typ, Standort und Info bearbeiten"
+                                               class="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                                                <x-module-icon name="edit" class="text-base" />
+                                            </a>
                                         </td>
                                     </tr>
                                 @endforeach

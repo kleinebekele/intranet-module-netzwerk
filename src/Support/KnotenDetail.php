@@ -33,7 +33,7 @@ class KnotenDetail
                 $schema = Netzwerk::schema();
                 $db = DB::connection(Netzwerk::connection());
 
-                $nodes = $db->select("SELECT id, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
+                $nodes = $db->select("SELECT id, matchKey, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
                 $links = $db->select("SELECT von_node_id, von_port, zu_node_id, zu_port, zu_fremd_mac, zu_fremd_name FROM {$schema}.network_links WHERE von_node_id = ? OR zu_node_id = ?", [$id, $id]);
                 try {
                     $ports = $db->select("SELECT node_id, name, operStatus, adminStatus, speedMbit, inBps, outBps, vlanUntagged, vlanTagged FROM {$schema}.network_ports WHERE node_id = ?", [$id]);
@@ -80,6 +80,16 @@ class KnotenDetail
         // die Netgear-Geräte melden sich auf http (und leiten ggf. selbst um).
         $knoten->webinterface = $knoten->ip === null ? null
             : ($knoten->art === 'firewall' ? 'https' : 'http').'://'.$knoten->ip;
+
+        // Pflege-Daten (Typ/Standort/Info): Schlüssel ist die Chassis-MAC
+        // (der matchKey, sofern er eine ist), ersatzweise die IP.
+        $matchKey = mb_strtolower(trim((string) ($knoten->matchKey ?? '')));
+        $knoten->mac = preg_match('/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/', $matchKey) ? $matchKey : null;
+        $knoten->pflege = GeraeteMeta::anzeige(
+            GeraeteMeta::nachschlagen()($knoten->mac, $knoten->ip),
+            TypErkennung::fuerKnoten($knoten->art),
+            GeraeteMeta::typNamen(),
+        );
 
         // ── Nachbarn: Kanten in beide Richtungen, dedupliziert je Partner ─────
         $nachbarn = [];

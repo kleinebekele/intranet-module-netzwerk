@@ -6,11 +6,22 @@ lokalen Netzwerks** – welche Geräte es gibt, wo sie hängen, ob sie online si
 **Seiten:** *Karte* (Topologie-Baum aus LLDP-Daten: Switches mit Portanzahl,
 aktueller Rate, Fremd-Nachbarn und Redundanz-Querverbindungen; neu entdeckte,
 noch nicht abfragbare Geräte erscheinen amber mit Einbindungs-Anleitung),
-*Geräte* (Endgeräte-Inventar aus dem Ping-Scan, je Netzsegment, mit Spalte
-„Anschluss") und je Knoten eine **Detailseite** (Portleiste mit Status/Speed/
-Rate/Uplinks und VLANs („1U, 10T" = untagged/tagged), angeschlossene Geräte je
-Port, WLAN-Clients bei APs, Nachbarn, Link zum Webinterface des Geräts) –
-verlinkt aus Karte und Geräteliste.
+*Geräte* (Endgeräte-Inventar aus dem Ping-Scan, je Netzsegment, mit Spalten
+„Anschluss", Typ, Standort und Info) und je Knoten eine **Detailseite**
+(Portleiste mit Status/Speed/Rate/Uplinks und VLANs („1U, 10T" =
+untagged/tagged), angeschlossene Geräte je Port, WLAN-Clients bei APs,
+Nachbarn, Link zum Webinterface des Geräts) – verlinkt aus Karte und
+Geräteliste.
+
+**Pflege-Daten:** Zu jedem Gerät (Endgerät wie Infrastruktur-Knoten) lassen
+sich **Gerätetyp**, **Standort** (Gebäude/Stockwerk/Raum) und ein freies
+**Info-Feld** hinterlegen – Stift-Symbol in der Geräteliste bzw. „bearbeiten"
+auf der Knoten-Detailseite. Typen und Standorte verwaltet je ein eigener
+Menüpunkt (CRUD). Diese Daten liegen in der **Instanz-Datenbank**
+(`netzwerk_geraetetypen`, `netzwerk_standorte`, `netzwerk_geraete`, verknüpft
+lose über MAC bzw. IP) – die MSSQL-Quelle bleibt read-only. Viele Typen
+erkennt das Modul automatisch (Knoten-Art, Hersteller, Hostname); erkannte
+Typen erscheinen kursiv und werden beim Speichern im Formular übernommen.
 
 Das Modul **liest nur**. Erhoben werden die Daten von einem externen Collector
 (bei uns: ein Raspberry Pi im Netz, der per nmap und SNMP scannt) und in eine
@@ -22,6 +33,7 @@ Netzwerkgeräten.
 ```bash
 composer require do1emu/module-netzwerk
 php artisan modules:sync
+php artisan migrate
 ```
 
 Danach in der `.env` die Datenquelle hinterlegen (ODBC-Weg, empfohlen):

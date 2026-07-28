@@ -24,7 +24,10 @@ class GeraeteListe
     public function geraete(): array
     {
         if ((bool) config('netzwerk.demo', false)) {
-            return DemoDaten::geraeteListe();
+            $daten = DemoDaten::geraeteListe();
+            $this->anreichern($daten['segmente']);
+
+            return $daten;
         }
 
         if (! Netzwerk::konfiguriert()) {
@@ -77,6 +80,8 @@ class GeraeteListe
         foreach ($rows as $r) {
             $segmente[$r->segment][] = $r;
         }
+
+        $this->anreichern($segmente);
 
         return [
             'segmente' => $segmente,
@@ -133,6 +138,28 @@ class GeraeteListe
         }
 
         return $anschluesse;
+    }
+
+    /**
+     * Pflege-Daten (Typ/Standort/Info) an jede Zeile hängen — gepflegter Typ
+     * gewinnt, sonst der automatisch erkannte (kursiv in der Anzeige).
+     *
+     * @param  array<string, list<object>>  $segmente
+     */
+    private function anreichern(array $segmente): void
+    {
+        $nachschlagen = GeraeteMeta::nachschlagen();
+        $typNamen = GeraeteMeta::typNamen();
+
+        foreach ($segmente as $geraete) {
+            foreach ($geraete as $g) {
+                $g->pflege = GeraeteMeta::anzeige(
+                    $nachschlagen($g->mac, $g->ip),
+                    TypErkennung::fuerGeraet($g->hostname, $g->vendor),
+                    $typNamen,
+                );
+            }
+        }
     }
 
     private function leerZuNull(mixed $wert): ?string

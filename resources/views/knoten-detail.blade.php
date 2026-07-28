@@ -29,6 +29,13 @@
                         <span class="text-xs font-semibold text-green-800 bg-green-100 rounded px-1.5 py-0.5">online</span>
                     @endif
                     <span class="ml-auto flex items-center gap-4">
+                        <a href="{{ route('module.netzwerk.geraet', array_filter([
+                                'mac' => $knoten->mac,
+                                'ip' => $knoten->ip,
+                                'anzeige' => $knoten->name ?? $knoten->ip,
+                                'erkannt' => $knoten->pflege->erkannt ? $knoten->pflege->typ : null,
+                                'zurueck' => request()->getRequestUri(),
+                            ])) }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">bearbeiten</a>
                         @if ($knoten->webinterface)
                             <a href="{{ $knoten->webinterface }}" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Webinterface ↗</a>
                         @endif
@@ -40,6 +47,16 @@
                 </div>
                 <div class="mt-2 text-sm text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
                     @if ($knoten->ip)<span class="font-mono">{{ $knoten->ip }}</span>@endif
+                    @if ($knoten->pflege->typ)
+                        <span>Typ:
+                            @if ($knoten->pflege->erkannt)
+                                <span class="italic" title="automatisch erkannt – beim Bearbeiten übernehmen">{{ $knoten->pflege->typ }}</span>
+                            @else
+                                {{ $knoten->pflege->typ }}
+                            @endif
+                        </span>
+                    @endif
+                    @if ($knoten->pflege->standort)<span>{{ $knoten->pflege->standort }}</span>@endif
                     @if ($knoten->modell)<span>{{ $knoten->modell }}</span>@endif
                     @if ($knoten->firmware)<span>Firmware {{ $knoten->firmware }}</span>@endif
                     @if ($knoten->standort)<span>{{ $knoten->standort }}</span>@endif
@@ -50,6 +67,9 @@
                         <span class="text-indigo-700 font-semibold">Demo-Daten (NETZWERK_DEMO) – nichts hiervon ist echt</span>
                     @endif
                 </div>
+                @if ($knoten->pflege->info)
+                    <p class="mt-2 text-sm text-gray-600 whitespace-pre-line border-l-4 border-gray-200 pl-3">{{ $knoten->pflege->info }}</p>
+                @endif
             </div>
 
             {{-- Portleiste --}}
