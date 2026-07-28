@@ -234,7 +234,13 @@ class KartenDaten
             }
             $n->fremde = array_values(array_filter($n->fremde, function (array $f) use ($zugeordnetNachMac) {
                 $mac = mb_strtolower((string) ($f['mac'] ?? ''));
-                if ($mac === '' || ! isset($zugeordnetNachMac[$mac])) {
+                if ($mac === '') {
+                    // Ohne MAC (LLDP-Chassis-ID ist ein freier Name) ist kein
+                    // Abgleich möglich — solche Einträge zeigt nur noch die
+                    // Knoten-Detailseite (Nachbarn), nicht mehr die Karte.
+                    return false;
+                }
+                if (! isset($zugeordnetNachMac[$mac])) {
                     return true;
                 }
                 if ($zugeordnetNachMac[$mac]->hostname === null) {
