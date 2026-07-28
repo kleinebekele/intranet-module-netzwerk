@@ -13,6 +13,7 @@ use Intranet\Modules\Netzwerk\Models\Geraet;
 use Intranet\Modules\Netzwerk\Models\Geraetetyp;
 use Intranet\Modules\Netzwerk\Models\Raum;
 use Intranet\Modules\Netzwerk\Models\Stockwerk;
+use Intranet\Modules\Netzwerk\Support\GeraeteListe;
 
 /**
  * Pflege-Formular je Gerät: Typ, Standort, Info.
@@ -29,15 +30,18 @@ class GeraetController extends Controller
 {
     private const MAC_MUSTER = '/^[0-9a-fA-F]{2}([:-][0-9a-fA-F]{2}){5}$/';
 
-    public function bearbeiten(Request $request): View
+    public function bearbeiten(Request $request, GeraeteListe $liste): View
     {
         [$mac, $ip] = $this->kennung($request);
         $geraet = $this->finden($mac, $ip);
+        $inventar = $liste->finden($mac, $ip);
 
         return view('netzwerk::geraet-bearbeiten', [
             'mac' => $mac,
             'ip' => $ip,
-            'anzeige' => trim((string) $request->query('anzeige')) ?: ($ip ?? $mac),
+            'inventar' => $inventar,
+            'anzeige' => $inventar?->hostname
+                ?? (trim((string) $request->query('anzeige')) ?: ($ip ?? $mac)),
             'zurueck' => $this->zurueck($request),
             'geraet' => $geraet,
             'erkannt' => trim((string) $request->query('erkannt')) ?: null,

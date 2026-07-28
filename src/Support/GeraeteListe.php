@@ -141,6 +141,59 @@ class GeraeteListe
     }
 
     /**
+     * Ein einzelnes Gerät aus dem Inventar, für die Detail-/Bearbeiten-Seite:
+     * Hostname, Hersteller, MAC, Anschluss, online/zuletzt gesehen. Gesucht
+     * wird über die MAC (bevorzugt), ersatzweise die IP; null, wenn das
+     * Inventar nichts kennt (dann zeigt die Seite nur die Kennung).
+     */
+    public function finden(?string $mac, ?string $ip): ?object
+    {
+        if ((bool) config('netzwerk.demo', false)) {
+            foreach (DemoDaten::geraeteListe()['segmente'] as $geraete) {
+                foreach ($geraete as $g) {
+                    if (($mac !== null && $g->mac === $mac) || ($mac === null && $ip !== null && $g->ip === $ip)) {
+                        return $g;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        if (! Netzwerk::konfiguriert()) {
+            return null;
+        }
+
+        try {
+            $sql = sprintf(
+                'SELECT id, ip, mac, hostname, vendor, segment, lastSeen FROM %s.network_devices WHERE %s',
+                Netzwerk::schema(),
+                $mac !== null ? 'LOWER(mac) = ?' : 'ip = ?',
+            );
+            $r = DB::connection(Netzwerk::connection())->select($sql, [$mac ?? $ip])[0] ?? null;
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
+        if ($r === null) {
+            return null;
+        }
+
+        $r->hostname = $this->leerZuNull($r->hostname);
+        $r->vendor = $this->leerZuNull($r->vendor);
+        $r->mac = $this->leerZuNull($r->mac);
+        $r->ip = trim((string) $r->ip);
+        $gesehenRoh = trim((string) ($r->lastSeen ?? ''));
+        $r->gesehen = $gesehenRoh === '' ? null : Carbon::parse($gesehenRoh);
+        $r->online = $r->gesehen !== null
+            && $r->gesehen->greaterThanOrEqualTo(now()->subMinutes((int) config('netzwerk.offline_ab_minuten', 15)));
+        $r->anschluss = $this->anschluesse()[(int) $r->id] ?? null;
+
+        return $r;
+    }
+
+    /**
      * Pflege-Daten (Typ/Standort/Info) an jede Zeile hängen — gepflegter Typ
      * gewinnt, sonst der automatisch erkannte (kursiv in der Anzeige).
      *

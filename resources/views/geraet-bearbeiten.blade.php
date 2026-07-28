@@ -16,13 +16,34 @@
             <div class="bg-white shadow-sm sm:rounded-lg p-4 sm:p-6">
                 <div class="flex items-center gap-2 flex-wrap mb-1">
                     <span class="font-semibold text-lg text-gray-800">{{ $anzeige }}</span>
+                    @if ($inventar !== null)
+                        @if ($inventar->online)
+                            <span class="text-xs font-semibold text-green-800 bg-green-100 rounded px-1.5 py-0.5">online</span>
+                        @else
+                            <span class="text-xs font-semibold text-red-800 bg-red-100 rounded px-1.5 py-0.5">offline</span>
+                        @endif
+                    @endif
                     <span class="ml-auto">
                         <a href="{{ $zurueck }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">zurück</a>
                     </span>
                 </div>
                 <div class="text-sm text-gray-500 flex flex-wrap gap-x-6 gap-y-1 mb-6">
                     @if ($ip)<span class="font-mono">{{ $ip }}</span>@endif
-                    @if ($mac)<span class="font-mono">{{ $mac }}</span>@endif
+                    @if ($inventar?->mac ?? $mac)<span class="font-mono">{{ $inventar?->mac ?? $mac }}</span>@endif
+                    @if ($inventar?->vendor)<span>{{ $inventar->vendor }}</span>@endif
+                    @if ($inventar?->anschluss)
+                        <span class="inline-flex items-center gap-1.5">
+                            <x-module-icon :name="$inventar->anschluss->via === 'wlan' ? 'wifi' : 'network'" class="text-base text-gray-400" />
+                            @if ($inventar->anschluss->node_id !== null)
+                                <a href="{{ route('module.netzwerk.knoten', $inventar->anschluss->node_id) }}" class="hover:underline">{{ $inventar->anschluss->text }}</a>
+                            @else
+                                {{ $inventar->anschluss->text }}
+                            @endif
+                        </span>
+                    @endif
+                    @if ($inventar?->gesehen)
+                        <span>zuletzt gesehen {{ $inventar->gesehen->locale('de')->diffForHumans() }}</span>
+                    @endif
                 </div>
 
                 <form method="POST" action="{{ route('module.netzwerk.geraet.speichern') }}" class="space-y-5">
