@@ -22,21 +22,21 @@ retries = 1
 
 # Je-Host-Ausnahmen als eigener Abschnitt [snmp:IP] — nur die abweichenden
 # Schlüssel angeben, der Rest kommt aus [snmp]. Beispiel S3300 (SlaveSwitch):
-[snmp:192.168.0.184]
+[snmp:10.10.0.184]
 auth_protocol = SHA-512
 priv_protocol = AES
 
 # Geräte ohne brauchbares SNMPv3 (ältere Smart-Switches, deren v3 fest am
 # admin-Konto hängt; WLAN-Controller) per v2c mit EIGENER Read-Only-Community
 # anbinden — nie die admin-Kopplung nutzen, nie "public" lassen:
-# [snmp:192.168.0.233]
+# [snmp:10.10.0.233]
 # version = 2c
 # community = HIER-DIE-COMMUNITY
 
 [discovery]
 # Einstiegspunkt(e) der rekursiven Suche, kommagetrennt. Ein erreichbarer
 # Switch genügt — alles Weitere findet der Collector über LLDP selbst.
-seed_ips = 192.168.0.180
+seed_ips = 10.10.0.180
 
 # Nach wie vielen Läufen ohne Antwort ein aktiver Switch als "stumm" gilt
 # (3 Läufe × 5 Minuten = 15 Minuten, passt zur Offline-Logik des Moduls).
@@ -45,7 +45,7 @@ stumm_nach_fehlversuchen = 3
 [wlan]
 # WLAN-Controller (Phase 3). Seine v2c-Community gehört ZUSÄTZLICH in einen
 # [snmp:IP]-Abschnitt oben — hier steht nur, WER der Controller ist.
-# controller_ip = 192.168.0.181
+# controller_ip = 10.10.0.181
 # Basis für --wlan-erkunden (Netgear-Enterprise-Baum des WC7500):
 # basis_oid = .1.3.6.1.4.1.4526.100.8
 
@@ -53,7 +53,7 @@ stumm_nach_fehlversuchen = 3
 # Firewall-API (Phase 4): ARP über alle Netze + Firewall als Karten-Node.
 # Benutzer mit reinen Anzeige-ACLs (netmon-api); Werte wie in ~/.opnsense/api.env.
 # Fehlt der Abschnitt, wird Phase 4 einfach übersprungen.
-# url = https://192.168.0.1
+# url = https://10.10.0.1
 # key = HIER-DER-API-KEY
 # secret = HIER-DAS-API-SECRET
 # name = OPNsense
@@ -62,12 +62,12 @@ stumm_nach_fehlversuchen = 3
 [dns]
 # Reverse-Lookup-Server für Gerätenamen (das DNS macht der Domaincontroller,
 # NICHT die OPNsense). Leer/weggelassen = System-Resolver des Pi.
-# server = 192.168.0.XX
+# server = 10.10.0.XX
 
 [mssql]
 # Zielserver — Werte wie in netscan.sh. `server` ist das, was dort bei
 # freebcp/tsql hinter -S bzw. -H steht (IP oder freetds.conf-Eintrag).
-server = 192.168.0.2
+server = 10.10.0.2
 port = 2302
 user = HIER-DB-USER
 password = HIER-DB-PASSWORT

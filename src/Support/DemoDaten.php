@@ -6,8 +6,8 @@ namespace Intranet\Modules\Netzwerk\Support;
  * Beispieldaten für die lokale Entwicklung (NETZWERK_DEMO=true in der .env).
  *
  * Die Entwicklungsumgebung erreicht die echte MSSQL-Quelle nicht – mit diesen
- * Daten lässt sich die Karte trotzdem ansehen und stylen. Die Topologie ist dem
- * echten Schulnetz nachempfunden (ein Master, daran Etagen-Switches, ein
+ * Daten lässt sich die Karte trotzdem ansehen und stylen. Die Topologie ist einem
+ * typischen Schulnetz nachempfunden (ein Master, daran Etagen-Switches, ein
  * WLAN-Controller, ein entdeckter, noch nicht eingebundener Switch), die Werte
  * sind frei erfunden.
  */
@@ -20,15 +20,15 @@ class DemoDaten
         $alt = now()->subHours(3)->toDateTimeString();
 
         $nodes = [
-            self::node(1, 'switch', 'Masterswitch', '192.168.0.180', 'M4300-8X8F ProSAFE', 'aktiv', $frisch),
-            self::node(2, 'switch', 'Zentralswitch', '192.168.0.176', 'M4300-52G ProSAFE', 'aktiv', $frisch),
-            self::node(3, 'switch', 'PoE Switch Werkstatt', '192.168.0.185', 'M4200-10MG-PoE+', 'aktiv', $frisch),
-            self::node(4, 'switch', 'Switch Eurythmie', '192.168.0.182', 'M4200-10MG-PoE+', 'aktiv', $frisch),
-            self::node(5, 'switch', 'SlaveSwitch', '192.168.0.184', 'S3300-28X ProSAFE', 'aktiv', $frisch),
-            self::node(6, 'controller', 'WLAN-Controller', '192.168.0.181', 'WC7500 ProSafe', 'aktiv', $frisch, standort: '0.06 Hausanschlussraum'),
-            self::node(7, 'switch', 'Switch OG2 (unbekannt)', '192.168.0.190', null, 'entdeckt', $frisch),
-            self::node(8, 'switch', 'Kellerswitch', '192.168.0.188', 'GS724T', 'stumm', $alt),
-            self::node(9, 'ap', 'AP Turnhalle', '192.168.0.45', 'WAC730', 'aktiv', $frisch),
+            self::node(1, 'switch', 'Masterswitch', '10.10.0.180', 'M4300-8X8F ProSAFE', 'aktiv', $frisch),
+            self::node(2, 'switch', 'Zentralswitch', '10.10.0.176', 'M4300-52G ProSAFE', 'aktiv', $frisch),
+            self::node(3, 'switch', 'PoE Switch Werkstatt', '10.10.0.185', 'M4200-10MG-PoE+', 'aktiv', $frisch),
+            self::node(4, 'switch', 'Switch Saal', '10.10.0.182', 'M4200-10MG-PoE+', 'aktiv', $frisch),
+            self::node(5, 'switch', 'SlaveSwitch', '10.10.0.184', 'S3300-28X ProSAFE', 'aktiv', $frisch),
+            self::node(6, 'controller', 'WLAN-Controller', '10.10.0.181', 'WC7500 ProSafe', 'aktiv', $frisch, standort: 'Technikraum'),
+            self::node(7, 'switch', 'Switch OG2 (unbekannt)', '10.10.0.190', null, 'entdeckt', $frisch),
+            self::node(8, 'switch', 'Kellerswitch', '10.10.0.188', 'GS724T', 'stumm', $alt),
+            self::node(9, 'ap', 'AP Turnhalle', '10.10.0.45', 'WAC730', 'aktiv', $frisch),
         ];
 
         $links = [
@@ -48,7 +48,7 @@ class DemoDaten
             self::link(2, '0/7', 9, 'eth0'),
             // Fremd-Nachbarn ohne eigenen Node: PCs hinter unmanaged Verteiler.
             self::fremd(1, '0/13', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK'),
-            self::fremd(1, '0/13', '10:7c:61:0a:33:44', 'MUWALD5'),
+            self::fremd(1, '0/13', '10:7c:61:0a:33:44', 'PC-MUSIK5'),
             self::fremd(1, '0/13', null, 'MUWALD6'),
             // Redundanz-Kante: soll als Querverbindung erscheinen.
             self::link(3, '0/9', 4, '0/9'),
@@ -79,18 +79,18 @@ class DemoDaten
         $stand = now()->subMinutes(4);
 
         $geraete = [
-            self::geraet('192.168.0.21', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK', 'Micro-Star', true, $frisch,
+            self::geraet('10.10.0.21', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK', 'Micro-Star', true, $frisch,
                 self::anschluss('Masterswitch', '0/13', stand: $stand, nodeId: 1)),
-            self::geraet('192.168.0.23', '10:7c:61:0a:33:44', 'MUWALD5', 'Micro-Star', true, $frisch,
+            self::geraet('10.10.0.23', '10:7c:61:0a:33:44', 'PC-MUSIK5', 'Micro-Star', true, $frisch,
                 self::anschluss('Masterswitch', '0/13', stand: $stand, nodeId: 1)),
-            self::geraet('192.168.0.52', 'b8:27:eb:12:34:56', 'netscan-pi', 'Raspberry Pi', true, $frisch,
+            self::geraet('10.10.0.52', 'b8:27:eb:12:34:56', 'netscan-pi', 'Raspberry Pi', true, $frisch,
                 self::anschluss('Zentralswitch', '0/7', stand: $stand, nodeId: 2)),
-            self::geraet('192.168.0.77', 'aa:5c:11:22:33:44', 'LAPTOP-LEHRER1', null, true, $frisch,
+            self::geraet('10.10.0.77', 'aa:5c:11:22:33:44', 'LAPTOP-LEHRER1', null, true, $frisch,
                 self::anschluss('AP Turnhalle', null, via: 'wlan', ssid: 'Schule', stand: $stand, nodeId: 9)),
-            self::geraet('192.168.0.90', 'de:ad:be:ef:00:90', null, 'Zebra Technologies', false, now()->subHours(6),
+            self::geraet('10.10.0.90', 'de:ad:be:ef:00:90', null, 'Zebra Technologies', false, now()->subHours(6),
                 self::anschluss('PoE Switch Werkstatt', '0/4', stand: now()->subHours(6), nodeId: 3)),
-            self::geraet('192.168.0.113', null, 'drucker-verwaltung', null, true, $frisch, null),
-            self::geraet('192.168.2.30', null, 'kasse-kueche', null, true, $frisch, null),
+            self::geraet('10.10.0.113', null, 'drucker-verwaltung', null, true, $frisch, null),
+            self::geraet('10.10.2.30', null, 'kasse-kueche', null, true, $frisch, null),
         ];
 
         $segmente = [];
@@ -271,17 +271,17 @@ class DemoDaten
 
         return match ($nodeId) {
             1 => [
-                $geraet('192.168.0.21', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK', '0/13'),
-                $geraet('192.168.0.23', '10:7c:61:0a:33:44', 'MUWALD5', '0/13'),
-                $geraet('192.168.0.113', null, 'drucker-verwaltung', '0/5'),
-                $geraet('192.168.0.66', '00:11:22:33:44:55', 'altgeraet', null, gesehen: now()->subDays(2)->toDateTimeString()),
+                $geraet('10.10.0.21', '10:7c:61:0a:11:22', 'RYZEN-GRAFIK', '0/13'),
+                $geraet('10.10.0.23', '10:7c:61:0a:33:44', 'PC-MUSIK5', '0/13'),
+                $geraet('10.10.0.113', null, 'drucker-verwaltung', '0/5'),
+                $geraet('10.10.0.66', '00:11:22:33:44:55', 'altgeraet', null, gesehen: now()->subDays(2)->toDateTimeString()),
             ],
             3 => [
-                $geraet('192.168.0.90', 'de:ad:be:ef:00:90', null, '0/4'),
+                $geraet('10.10.0.90', 'de:ad:be:ef:00:90', null, '0/4'),
             ],
             9 => [
-                $geraet('192.168.0.77', 'aa:5c:11:22:33:44', 'LAPTOP-LEHRER1', null, 'wlan', 'Schule'),
-                $geraet('192.168.4.12', '2e:b3:0e:5f:97:79', null, null, 'wlan', 'Tablets'),
+                $geraet('10.10.0.77', 'aa:5c:11:22:33:44', 'LAPTOP-LEHRER1', null, 'wlan', 'Schule'),
+                $geraet('10.10.4.12', '2e:b3:0e:5f:97:79', null, null, 'wlan', 'Tablets'),
             ],
             default => [],
         };

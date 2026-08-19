@@ -97,5 +97,5 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
    Benachrichtigungen) erreichen die Meldungen niemanden — der Task weist in seiner
    Lauf-Historie darauf hin.
 
-Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz
-(Erst-Einsatz: Waldorfschule).
+Das Konzept samt Collector-Beschreibung liegt bei der betreibenden Instanz.
+Das Repo selbst bleibt frei von Netzdaten.
