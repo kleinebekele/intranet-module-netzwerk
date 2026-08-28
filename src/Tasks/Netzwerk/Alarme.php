@@ -92,8 +92,9 @@ class Alarme extends EkkonTask
         $bekannt = KnotenStatus::all()->keyBy('matchkey');
         $baseline = $bekannt->isEmpty();
         $gesehen = [];
-        $zaehler = ['offline' => 0, 'wieder_online' => 0, 'entdeckt' => 0];
-        $ohneZiel = [];
+        $offline = [];
+        $wieder = [];
+        $entdeckt = [];
 
         foreach ($zeilen as $z) {
             $matchkey = mb_strtolower(trim((string) ($z->matchKey ?? '')));
@@ -114,34 +115,13 @@ class Alarme extends EkkonTask
 
             if ($alt === null) {
                 if (! $baseline && $status === 'entdeckt') {
-                    $zaehler['entdeckt']++;
-                    $this->melden($ohneZiel, 'netzwerk-knoten-entdeckt',
-                        'Neues Netzwerk-Gerät entdeckt: '.$anzeige,
-                        'Der Collector hat per LLDP ein neues Gerät gefunden'
-                        .($ip !== null ? ' ('.$ip.')' : '')
-                        .', kann es aber noch nicht abfragen. Zum Einbinden den SNMP-Benutzer „netmon" '
-                        .'darauf anlegen (Details auf der Netzwerk-Karte im Intranet).',
-                        ['name' => $anzeige, 'ip' => $ip, 'matchkey' => $matchkey],
-                        'netzwerk-entdeckt:'.$matchkey);
+                    $entdeckt[] = ['anzeige' => $anzeige, 'ip' => $ip, 'matchkey' => $matchkey];
                 }
             } elseif ($status !== 'entdeckt') {
                 if ($alt->online && ! $online) {
-                    $zaehler['offline']++;
-                    $this->melden($ohneZiel, 'netzwerk-knoten-offline',
-                        'Netzwerk-Gerät antwortet nicht mehr: '.$anzeige,
-                        $anzeige.($ip !== null ? ' ('.$ip.')' : '').' wurde zuletzt '
-                        .($zuletzt !== null ? $zuletzt->locale('de')->isoFormat('LLL').' Uhr' : 'unbekannt')
-                        .' gesehen (Schwelle: '.$schwelle.' Minuten).',
-                        ['name' => $anzeige, 'ip' => $ip, 'zuletzt_gesehen' => (string) $zuletzt],
-                        'netzwerk-offline:'.$matchkey.':'.($zuletzt?->getTimestamp() ?? 0));
+                    $offline[] = ['anzeige' => $anzeige, 'ip' => $ip, 'matchkey' => $matchkey, 'zuletzt' => $zuletzt];
                 } elseif (! $alt->online && $online && ! $baseline && $entwarnung) {
-                    $zaehler['wieder_online']++;
-                    $this->melden($ohneZiel, 'netzwerk-knoten-wieder-online',
-                        'Netzwerk-Gerät wieder erreichbar: '.$anzeige,
-                        $anzeige.($ip !== null ? ' ('.$ip.')' : '').' meldet sich wieder.'
-                        .($alt->zuletzt_gesehen !== null ? ' Zuvor zuletzt gesehen: '.$alt->zuletzt_gesehen->locale('de')->isoFormat('LLL').' Uhr.' : ''),
-                        ['name' => $anzeige, 'ip' => $ip],
-                        'netzwerk-wieder:'.$matchkey.':'.($alt->zuletzt_gesehen?->getTimestamp() ?? 0));
+                    $wieder[] = ['anzeige' => $anzeige, 'ip' => $ip, 'matchkey' => $matchkey, 'vorher' => $alt->zuletzt_gesehen];
                 }
             }
 
@@ -156,6 +136,39 @@ class Alarme extends EkkonTask
         // Karteileichen (Collector hat den Node aufgeräumt) auch hier entsorgen.
         $entfernt = $gesehen === [] ? 0 : KnotenStatus::whereNotIn('matchkey', $gesehen)->delete();
 
+        // ── Sammelmeldungen: je Lauf EINE Meldung pro Art statt einer je Gerät.
+        //    Anzahl im Titel, Emojis je Zeile (kritisch rot, Entwarnung grün).
+        $ohneZiel = [];
+        if ($offline !== []) {
+            $n = count($offline);
+            $liste = array_map(fn ($g) => '🔴 '.$g['anzeige'].($g['ip'] !== null ? ' ('.$g['ip'].')' : '')
+                .' — zuletzt gesehen: '.($g['zuletzt'] !== null ? $g['zuletzt']->locale('de')->isoFormat('LLL').' Uhr' : 'unbekannt'), $offline);
+            $this->sammelmeldung($ohneZiel, 'netzwerk-knoten-offline',
+                '🚨 '.$n.' Netzwerk-Gerät'.($n === 1 ? '' : 'e').' offline',
+                'Folgende Geräte antworten nicht mehr (Schwelle: '.$schwelle." Minuten):\n\n".implode("\n", $liste),
+                $offline, fn ($g) => $g['matchkey'].':'.($g['zuletzt']?->getTimestamp() ?? 0), 'netzwerk-offline-batch');
+        }
+        if ($wieder !== []) {
+            $n = count($wieder);
+            $liste = array_map(fn ($g) => '🟢 '.$g['anzeige'].($g['ip'] !== null ? ' ('.$g['ip'].')' : '')
+                .($g['vorher'] !== null ? ' — zuvor zuletzt gesehen: '.$g['vorher']->locale('de')->isoFormat('LLL').' Uhr' : ''), $wieder);
+            $this->sammelmeldung($ohneZiel, 'netzwerk-knoten-wieder-online',
+                '✅ '.$n.' Netzwerk-Gerät'.($n === 1 ? '' : 'e').' wieder erreichbar',
+                'Folgende Geräte melden sich wieder:'."\n\n".implode("\n", $liste),
+                $wieder, fn ($g) => $g['matchkey'].':'.($g['vorher']?->getTimestamp() ?? 0), 'netzwerk-wieder-batch');
+        }
+        if ($entdeckt !== []) {
+            $n = count($entdeckt);
+            $liste = array_map(fn ($g) => '🔍 '.$g['anzeige'].($g['ip'] !== null ? ' ('.$g['ip'].')' : ''), $entdeckt);
+            $this->sammelmeldung($ohneZiel, 'netzwerk-knoten-entdeckt',
+                '🆕 '.$n.' neue'.($n === 1 ? 's' : '').' Netzwerk-Gerät'.($n === 1 ? '' : 'e').' entdeckt',
+                'Der Collector hat per LLDP neue Geräte gefunden, kann sie aber noch nicht abfragen. '
+                .'Zum Einbinden den SNMP-Benutzer „netmon" darauf anlegen (Details auf der Netzwerk-Karte):'."\n\n".implode("\n", $liste),
+                $entdeckt, fn ($g) => $g['matchkey'], 'netzwerk-entdeckt-batch');
+        }
+
+        $zaehler = ['offline' => count($offline), 'wieder_online' => count($wieder), 'entdeckt' => count($entdeckt)];
+
         if ($baseline) {
             $this->msg('Erster Lauf: '.count($gesehen).' Knoten als Ausgangslage gemerkt — noch keine Meldungen.');
         } else {
@@ -169,9 +182,17 @@ class Alarme extends EkkonTask
         return $zaehler + ['knoten' => count($gesehen), 'baseline' => $baseline, 'entfernt' => $entfernt];
     }
 
-    /** benachrichtige() + merken, wenn die Meldungsart keine Route hat. */
-    private function melden(array &$ohneZiel, string $art, string $titel, string $text, array $daten, string $idempotenz): void
+    /**
+     * Eine Sammelmeldung je Art abschicken — alle betroffenen Geräte eines
+     * Laufs in EINER Benachrichtigung statt einer je Gerät. Der Idempotenz-
+     * Schlüssel entsteht aus dem Inhalt der Sammlung ($signatur je Gerät):
+     * derselbe Satz Geräte wird nie doppelt gemeldet, ein anderer (neuer
+     * Ausfall oder Rückkehrer) sehr wohl.
+     */
+    private function sammelmeldung(array &$ohneZiel, string $art, string $titel, string $text, array $geraete, callable $signatur, string $praefix): void
     {
+        $idempotenz = $praefix.':'.md5(implode('|', array_map($signatur, $geraete)));
+        $daten = ['anzahl' => count($geraete), 'geraete' => array_map(fn ($g) => $g['anzeige'], $geraete)];
         $ergebnis = $this->benachrichtige($art, $titel, $text, $daten, $idempotenz);
         if ($ergebnis['ohne_ziel'] ?? false) {
             $ohneZiel[] = $art;
