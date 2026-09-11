@@ -4,6 +4,7 @@ namespace Intranet\Modules\Netzwerk\Support;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Intranet\Modules\Netzwerk\Models\AusgeblendeterKnoten;
 use Intranet\Modules\Netzwerk\Netzwerk;
 use Throwable;
 
@@ -24,7 +25,7 @@ class KartenDaten
 {
     /**
      * @return array{wurzeln: list<object>, quer: list<array<string, mixed>>, gesamt: int,
-     *               online: int, entdeckt: int, quelle: string, aktualisiert: ?string}
+     *               online: int, entdeckt: int, ausgeblendet: list<object>, quelle: string, aktualisiert: ?string}
      */
     public function karte(): array
     {
@@ -38,7 +39,7 @@ class KartenDaten
                 $schema = Netzwerk::schema();
                 $db = DB::connection(Netzwerk::connection());
 
-                $nodes = $db->select("SELECT id, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
+                $nodes = $db->select("SELECT id, matchKey, art, name, ip, modell, firmware, standort, status, lastSeen FROM {$schema}.network_nodes");
                 $links = $db->select("SELECT von_node_id, von_port, zu_node_id, zu_port, zu_fremd_mac, zu_fremd_name FROM {$schema}.network_links");
                 $ports = $db->select("SELECT node_id, operStatus, inBps, outBps FROM {$schema}.network_ports");
                 $geraete = $db->select("SELECT node_id, ip, mac, hostname, port_name, verbunden_via, ssid, lastSeen FROM {$schema}.network_devices");
@@ -81,6 +82,23 @@ class KartenDaten
             }
 
             $beiId[$n->id] = $n;
+        }
+
+        // ── Ausgeblendete Knoten (gehören nicht dazu) samt ihren Kanten entfernen ──
+        $versteckt = AusgeblendeterKnoten::schluesselMenge();
+        $ausgeblendet = [];
+        foreach ($beiId as $id => $n) {
+            if (isset($versteckt[AusgeblendeterKnoten::schluessel($n)])) {
+                $ausgeblendet[] = $n;
+                unset($beiId[$id]);
+            }
+        }
+        if ($ausgeblendet !== []) {
+            $links = array_values(array_filter($links, function ($l) use ($beiId) {
+                $zuRoh = trim((string) ($l->zu_node_id ?? ''));
+
+                return isset($beiId[(int) $l->von_node_id]) && ($zuRoh === '' || isset($beiId[(int) $zuRoh]));
+            }));
         }
 
         // ── Endgeräte an ihren Knoten hängen ──────────────────────────────────
@@ -271,6 +289,7 @@ class KartenDaten
             'gesamt' => count($beiId),
             'online' => count(array_filter($beiId, fn ($n) => $n->online)),
             'entdeckt' => count(array_filter($beiId, fn ($n) => $n->status === 'entdeckt')),
+            'ausgeblendet' => $ausgeblendet,
             'quelle' => $quelle,
             'aktualisiert' => $aktualisiert?->toDateTimeString(),
         ];
@@ -325,7 +344,7 @@ class KartenDaten
         return $wert === '' ? null : $wert;
     }
 
-    /** @return array{wurzeln: list<object>, quer: list<array<string, mixed>>, gesamt: int, online: int, entdeckt: int, quelle: string, aktualisiert: ?string} */
+    /** @return array{wurzeln: list<object>, quer: list<array<string, mixed>>, gesamt: int, online: int, entdeckt: int, ausgeblendet: list<object>, quelle: string, aktualisiert: ?string} */
     private function leer(string $grund): array
     {
         return [
@@ -334,6 +353,7 @@ class KartenDaten
             'gesamt' => 0,
             'online' => 0,
             'entdeckt' => 0,
+            'ausgeblendet' => [],
             'quelle' => $grund,
             'aktualisiert' => null,
         ];

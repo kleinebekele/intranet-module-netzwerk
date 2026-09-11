@@ -61,6 +61,29 @@
                 </div>
             @endforelse
 
+            @if (count($ausgeblendet) > 0)
+                <div class="bg-white shadow-sm sm:rounded-lg p-4 sm:p-6 text-sm">
+                    <h3 class="font-semibold text-gray-700 mb-2">Ausgeblendet</h3>
+                    <p class="text-gray-500 mb-3">
+                        Diese Knoten hat der Collector gefunden, sie gehören aber nicht zur überwachten
+                        Infrastruktur (per Knopf ausgeblendet – kein Alarm, nicht auf der Karte).
+                    </p>
+                    <ul class="space-y-1.5">
+                        @foreach ($ausgeblendet as $a)
+                            <li class="flex flex-wrap items-center gap-2 text-gray-700">
+                                <a href="{{ route('module.netzwerk.knoten', $a->id) }}" class="font-medium hover:underline">{{ $a->name ?? $a->ip ?? 'unbenannt' }}</a>
+                                @if ($a->ip)<span class="font-mono text-xs text-gray-500">{{ $a->ip }}</span>@endif
+                                <form method="POST" action="{{ route('module.netzwerk.knoten.ausblenden', $a->id) }}" class="inline">
+                                    @csrf
+                                    <input type="hidden" name="einblenden" value="1">
+                                    <button type="submit" class="text-xs text-indigo-700 hover:underline">wieder einblenden</button>
+                                </form>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             @if (count($quer) > 0)
                 <div class="bg-white shadow-sm sm:rounded-lg p-4 sm:p-6 text-sm">
                     <h3 class="font-semibold text-gray-700 mb-2">Querverbindungen</h3>

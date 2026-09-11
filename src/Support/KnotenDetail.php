@@ -4,6 +4,7 @@ namespace Intranet\Modules\Netzwerk\Support;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Intranet\Modules\Netzwerk\Models\AusgeblendeterKnoten;
 use Intranet\Modules\Netzwerk\Netzwerk;
 use Throwable;
 
@@ -76,6 +77,8 @@ class KnotenDetail
         $knoten->online = $knoten->gesehen !== null && $knoten->gesehen->greaterThanOrEqualTo($grenze);
         $knoten->art ??= 'switch';
         $knoten->status ??= 'entdeckt';
+        $knoten->schluessel = AusgeblendeterKnoten::schluessel($knoten);
+        $knoten->ausgeblendet = AusgeblendeterKnoten::where('matchkey', $knoten->schluessel)->exists();
         // Verwaltungsoberfläche des Geräts: die OPNsense spricht nur https,
         // die Netgear-Geräte melden sich auf http (und leiten ggf. selbst um).
         $knoten->webinterface = $knoten->ip === null ? null

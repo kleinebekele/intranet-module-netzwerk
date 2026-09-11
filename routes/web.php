@@ -8,6 +8,7 @@ use Intranet\Modules\Netzwerk\Http\Controllers\KnotenController;
 use Intranet\Modules\Netzwerk\Http\Controllers\StandorteController;
 use Intranet\Modules\Netzwerk\Http\Controllers\StatistikController;
 use Intranet\Modules\Netzwerk\Http\Controllers\TypenController;
+use Intranet\Modules\Netzwerk\Http\Controllers\WlanGruppenController;
 
 /*
  | Routen des Netzwerk-Moduls.
@@ -31,6 +32,14 @@ Route::middleware(['web', 'auth'])
         Route::get('/geraete', [GeraeteController::class, 'index'])->name('geraete');
         Route::get('/statistik', [StatistikController::class, 'index'])->name('statistik');
         Route::get('/knoten/{id}', [KnotenController::class, 'show'])->whereNumber('id')->name('knoten');
+        // Ausblenden = gehört nicht dazu (z. B. LLDP-sprechender Virtualisierungs-Host):
+        // weg von Karte und Alarm; mit einblenden=1 kommt er zurück (Liste auf der Karte).
+        Route::post('/knoten/{id}/ausblenden', [KnotenController::class, 'ausblenden'])->whereNumber('id')->name('knoten.ausblenden');
+
+        // Überwachte WLAN-Gruppen des Alarm-Tasks — Bedienung liegt auf der
+        // Ekkon-Task-Seite (Einstellung vom Typ "view"), die Routen hier.
+        Route::post('/wlan-gruppen', [WlanGruppenController::class, 'hinzufuegen'])->name('wlan-gruppen.hinzufuegen');
+        Route::post('/wlan-gruppen/{index}/entfernen', [WlanGruppenController::class, 'entfernen'])->whereNumber('index')->name('wlan-gruppen.entfernen');
 
         // Pflege-Formular je Gerät (Typ/Standort/Info); Kennung = MAC/IP in
         // der Adresszeile. Erbt wie /knoten die Rollen des Karten-Menüpunkts.

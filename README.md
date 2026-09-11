@@ -93,11 +93,15 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
    Modul den Task **Netzwerk/Alarme**: meldet über die Ekkon-Benachrichtigungsrouten,
    wenn ein eingebundener Knoten nicht mehr antwortet (Schwelle einstellbar), wieder
    erreichbar ist (abschaltbar), ein neues Gerät entdeckt wurde oder in einem
-   WLAN mehr Geräte gleichzeitig eingebucht sind als erlaubt. Überwachte SSIDs als
-   Gruppen: `Gast-2G+Gast-5G=10; Lehrer=30` (Plus zählt Bänder desselben WLANs
-   zusammen, `=` setzt eine eigene Schwelle, sonst gilt die Standardschwelle);
-   gemeldet wird der Übergang, Quelle ist der Schnappschuss `network_wlan_clients`
-   des Collectors). Der erste Lauf
+   WLAN mehr Geräte gleichzeitig eingebucht sind als erlaubt. Die überwachten WLANs
+   werden auf der Task-Seite gepflegt (Ekkon-Basis ≥ 1.20, Einstellung vom Typ
+   `view`): Mehrfachauswahl aus den vom Collector gesehenen SSIDs (mehrere = zusammen-
+   gezählt, etwa 2,4- und 5-GHz-Netz desselben WLANs) plus Schwelle, Liste mit
+   Entfernen. Gemeldet wird der Übergang, Quelle ist der Schnappschuss
+   `network_wlan_clients` des Collectors.
+   Knoten, die nicht dazugehören (z. B. ein LLDP-sprechender Virtualisierungs-Host),
+   lassen sich auf ihrer Detailseite **ausblenden** – weg von Karte und Alarm, jederzeit
+   über den Abschnitt „Ausgeblendet" auf der Karte zurückholbar. Der erste Lauf
    merkt sich nur die Ausgangslage. ⚠️ Ohne eingerichtete Route (Ekkon →
    Benachrichtigungen) erreichen die Meldungen niemanden — der Task weist in seiner
    Lauf-Historie darauf hin.

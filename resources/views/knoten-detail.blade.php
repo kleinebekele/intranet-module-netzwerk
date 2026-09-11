@@ -21,7 +21,9 @@
                 <div class="flex items-center gap-2 flex-wrap">
                     <x-module-icon :name="$icon" class="text-2xl text-gray-500" />
                     <span class="font-semibold text-lg text-gray-800">{{ $knoten->name ?? $knoten->ip ?? 'unbenannt' }}</span>
-                    @if ($knoten->status === 'entdeckt')
+                    @if ($knoten->ausgeblendet)
+                        <span class="text-xs font-semibold text-gray-700 bg-gray-200 rounded px-1.5 py-0.5">ausgeblendet – gehört nicht dazu</span>
+                    @elseif ($knoten->status === 'entdeckt')
                         <span class="text-xs font-semibold text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">entdeckt – noch nicht eingebunden</span>
                     @elseif (! $knoten->online)
                         <span class="text-xs font-semibold text-red-800 bg-red-100 rounded px-1.5 py-0.5">offline</span>
@@ -38,6 +40,19 @@
                             ])) }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">bearbeiten</a>
                         @if ($knoten->webinterface)
                             <a href="{{ $knoten->webinterface }}" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Webinterface ↗</a>
+                        @endif
+                        @if ($knoten->ausgeblendet)
+                            <form method="POST" action="{{ route('module.netzwerk.knoten.ausblenden', $knoten->id) }}" class="inline">
+                                @csrf
+                                <input type="hidden" name="einblenden" value="1">
+                                <button type="submit" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">wieder einblenden</button>
+                            </form>
+                        @elseif ($knoten->status === 'entdeckt')
+                            <form method="POST" action="{{ route('module.netzwerk.knoten.ausblenden', $knoten->id) }}" class="inline"
+                                  onsubmit="return confirm('Diesen Knoten ausblenden? Er verschwindet von Karte und Alarm; die Liste auf der Karte holt ihn jederzeit zurück.');">
+                                @csrf
+                                <button type="submit" title="Gehört nicht zur überwachten Infrastruktur" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">ausblenden</button>
+                            </form>
                         @endif
                         @if (count($ports) > 0)
                             <a href="{{ route('module.netzwerk.statistik', ['knoten' => $knoten->id]) }}" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">Statistik</a>

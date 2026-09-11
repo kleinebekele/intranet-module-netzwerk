@@ -5,9 +5,11 @@ namespace Intranet\Modules\Netzwerk\Tasks\Netzwerk;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Intranet\Modules\Netzwerk\Models\AlarmZustand;
+use Intranet\Modules\Netzwerk\Models\AusgeblendeterKnoten;
 use Intranet\Modules\Netzwerk\Models\KnotenStatus;
 use Intranet\Modules\Netzwerk\Netzwerk;
 use Intranet\Modules\Netzwerk\Support\DemoDaten;
+use Intranet\Modules\Netzwerk\Support\WlanGruppen;
 use Intranet\Modules\Ekkon\Tasks\EkkonTask;
 use Throwable;
 
@@ -43,17 +45,19 @@ class Alarme extends EkkonTask
     ];
 
     public array $einstellungen = [
-        'wlan_ssids' => [
-            'typ' => 'text',
-            'label' => 'Überwachte WLANs (SSIDs)',
-            'standard' => '',
-            'hilfe' => 'Mehrere Gruppen durch Semikolon trennen. SSIDs einer Gruppe mit Plus verbinden, dann werden sie zusammengezählt (2,4- und 5-GHz-Netz desselben WLANs). Eigene Schwelle je Gruppe mit =Zahl. Beispiel: Gast-2G+Gast-5G=10; Lehrer=30. Leer = keine Überwachung.',
-        ],
         'wlan_schwelle' => [
             'typ' => 'zahl',
-            'label' => 'Andrang ab (Geräte, Standard je Gruppe)',
+            'label' => 'Andrang ab (Geräte, Vorgabe für neue WLAN-Gruppen)',
             'standard' => 10,
-            'hilfe' => 'Meldet, sobald MEHR als so viele Geräte gleichzeitig in diesem WLAN eingebucht sind. Gemeldet wird der Übergang, nicht jeder Lauf; die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder darunter lag.',
+            'hilfe' => 'Vorbelegung der Schwelle beim Hinzufügen einer WLAN-Gruppe (unten). Jede Gruppe hat ihre eigene Schwelle.',
+        ],
+        // Eigene Bedienung unter dem Formular (Mehrfachauswahl aus den gesehenen
+        // SSIDs + Schwelle, Liste mit Entfernen); Wert: "A+B=10; C=30".
+        'wlan_gruppen' => [
+            'typ' => 'view',
+            'view' => 'netzwerk::ekkon.wlan-gruppen',
+            'label' => 'Überwachte WLANs',
+            'standard' => '',
         ],
         'schwelle_minuten' => [
             'typ' => 'zahl',
@@ -105,6 +109,7 @@ class Alarme extends EkkonTask
 
         $bekannt = KnotenStatus::all()->keyBy('matchkey');
         $baseline = $bekannt->isEmpty();
+        $versteckt = AusgeblendeterKnoten::schluesselMenge();   // per Knopf ausgeblendet: kein Alarm
         $gesehen = [];
         $offline = [];
         $wieder = [];
@@ -112,7 +117,7 @@ class Alarme extends EkkonTask
 
         foreach ($zeilen as $z) {
             $matchkey = mb_strtolower(trim((string) ($z->matchKey ?? '')));
-            if ($matchkey === '') {
+            if ($matchkey === '' || isset($versteckt[$matchkey])) {
                 continue;
             }
             $gesehen[] = $matchkey;
@@ -206,9 +211,9 @@ class Alarme extends EkkonTask
      * fehlen dort. Gemeldet wird der Übergang (Gedächtnis: netzwerk_alarm_
      * zustand); ein veralteter Schnappschuss (Collector steht) meldet nichts.
      *
-     * Einstellung „wlan_ssids": Gruppen durch Semikolon, SSIDs einer Gruppe
+     * Einstellung „wlan_gruppen": Gruppen durch Semikolon, SSIDs einer Gruppe
      * durch Plus (werden zusammengezählt — 2,4- und 5-GHz-Netz desselben
-     * WLANs), optional „=Schwelle" je Gruppe, sonst wlan_schwelle.
+     * WLANs), „=Schwelle" je Gruppe; gepflegt über die Task-Seite.
      *
      * @return int Summe der eingebuchten Geräte aller überwachten Gruppen
      */
@@ -307,33 +312,14 @@ class Alarme extends EkkonTask
     }
 
     /**
-     * Die Einstellung „wlan_ssids" zerlegen: „Gast-2G+Gast-5G=10; Lehrer=30".
+     * Die überwachten WLAN-Gruppen („Gast-2G+Gast-5G=10; Lehrer=30"), gepflegt
+     * über die Bedienung auf der Task-Seite (WlanGruppen).
      *
      * @return list<array{ssids: list<string>, schwelle: int}>
      */
     private function wlanGruppen(): array
     {
-        $standard = max(0, (int) $this->einstellung('wlan_schwelle'));
-        $gruppen = [];
-        foreach (explode(';', (string) $this->einstellung('wlan_ssids')) as $eintrag) {
-            $eintrag = trim($eintrag);
-            if ($eintrag === '') {
-                continue;
-            }
-            $schwelle = $standard;
-            if (str_contains($eintrag, '=')) {
-                [$eintrag, $zahl] = array_map('trim', explode('=', $eintrag, 2));
-                if ($zahl !== '' && is_numeric($zahl)) {
-                    $schwelle = max(0, (int) $zahl);
-                }
-            }
-            $ssids = array_values(array_filter(array_map('trim', explode('+', $eintrag)), fn ($s) => $s !== ''));
-            if ($ssids !== []) {
-                $gruppen[] = ['ssids' => $ssids, 'schwelle' => $schwelle];
-            }
-        }
-
-        return $gruppen;
+        return WlanGruppen::parse((string) $this->einstellung('wlan_gruppen'));
     }
 
     /**
