@@ -108,16 +108,21 @@ class WlanGruppen
                 }
             }
         } elseif (Netzwerk::konfiguriert()) {
-            try {
-                $zeilen = DB::connection(Netzwerk::connection())->select(sprintf(
-                    'SELECT DISTINCT ssid FROM %s.network_wlan_clients WHERE ssid IS NOT NULL',
-                    Netzwerk::schema(),
-                ));
-                foreach ($zeilen as $z) {
-                    $ssids[] = trim((string) $z->ssid);
+            // Zwei Quellen: der Schnappschuss kennt nur, wer GERADE eingebucht ist —
+            // ein WLAN, in dem momentan niemand ist, stünde sonst nicht zur Wahl.
+            // network_devices hat die letzte Zuordnung aller je gesehenen Geräte.
+            foreach (['network_wlan_clients', 'network_devices'] as $tabelle) {
+                try {
+                    $zeilen = DB::connection(Netzwerk::connection())->select(sprintf(
+                        "SELECT DISTINCT ssid FROM %s.%s WHERE ssid IS NOT NULL AND ssid <> ''",
+                        Netzwerk::schema(), $tabelle,
+                    ));
+                    foreach ($zeilen as $z) {
+                        $ssids[] = trim((string) $z->ssid);
+                    }
+                } catch (Throwable) {
+                    // Tabelle fehlt noch (Collector-Update ausstehend) — nächste Quelle.
                 }
-            } catch (Throwable) {
-                // Tabelle fehlt noch (Collector-Update ausstehend) — dann nur die konfigurierten.
             }
         }
         foreach (self::gespeichert() as $g) {
