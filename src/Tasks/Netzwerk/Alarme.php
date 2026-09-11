@@ -45,12 +45,6 @@ class Alarme extends EkkonTask
     ];
 
     public array $einstellungen = [
-        'wlan_schwelle' => [
-            'typ' => 'zahl',
-            'label' => 'Andrang ab (Geräte, Vorgabe für neue WLAN-Gruppen)',
-            'standard' => 10,
-            'hilfe' => 'Vorbelegung der Schwelle beim Hinzufügen einer WLAN-Gruppe (unten). Jede Gruppe hat ihre eigene Schwelle.',
-        ],
         // Eigene Bedienung unter dem Formular (Mehrfachauswahl aus den gesehenen
         // SSIDs + Schwelle, Liste mit Entfernen); Wert: "A+B=10; C=30".
         'wlan_gruppen' => [

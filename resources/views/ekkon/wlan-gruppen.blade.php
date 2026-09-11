@@ -3,7 +3,7 @@
 @php
     $gruppen = \Intranet\Modules\Netzwerk\Support\WlanGruppen::parse((string) $wert);
     $verfuegbar = \Intranet\Modules\Netzwerk\Support\WlanGruppen::verfuegbareSsids();
-    $standardSchwelle = (int) ($einstellungen['wlan_schwelle'] ?? ($task->einstellungen['wlan_schwelle']['standard'] ?? 10));
+    $standardSchwelle = 10;
 @endphp
 
 <h4 class="font-semibold text-gray-700 mb-1">{{ $feld['label'] ?? 'Überwachte WLANs' }}</h4>
