@@ -94,8 +94,11 @@ stammt. Zuordnen lässt sich nur, was eine MAC hat (praktisch: das lokale
 `.0`-Netz; geroutete Netze kommen mit Phase 4/ARP).
 
 **WLAN (WC7500):** Mit `controller_ip` im `[wlan]`-Abschnitt (plus dessen
-v2c-Community als `[snmp:IP]`-Abschnitt) liest jeder Lauf die AP- und die
-Client-Tabelle des Controllers: Die verwalteten APs werden Nodes (Name, IP,
+v2c-Community als `[snmp:IP]`-Abschnitt) wird der Controller selbst ein Node
+(Art `controller`: Karte, Detailseite mit seinen Ethernet-Ports, Alarm bei
+Ausfall; Kennung = LAN-MAC aus `ifPhysAddress`, da er kein LLDP spricht; Kante
+zum Switch aus der FDB), und jeder Lauf liest die AP- und die Client-Tabelle
+des Controllers: Die verwalteten APs werden Nodes (Name, IP,
 Modell, Standort, Status; Kante zum Switch aus der FDB — der Port, an dem die
 LAN-MAC des AP gelernt wurde), und eingebuchte Clients bekommen statt des
 Switch-Ports ihre WLAN-Zuordnung „AP + SSID" (die gewinnt gegen die FDB, denn

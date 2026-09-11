@@ -44,7 +44,8 @@ stumm_nach_fehlversuchen = 3
 
 [wlan]
 # WLAN-Controller (Phase 3). Seine v2c-Community gehört ZUSÄTZLICH in einen
-# [snmp:IP]-Abschnitt oben — hier steht nur, WER der Controller ist.
+# [snmp:IP]-Abschnitt oben — hier steht nur, WER der Controller ist. Er wird
+# damit selbst ein Knoten (Karte, Detailseite, Alarm) und liefert APs + Clients.
 # controller_ip = 10.10.0.181
 # Basis für --wlan-erkunden (Netgear-Enterprise-Baum des WC7500):
 # basis_oid = .1.3.6.1.4.1.4526.100.8

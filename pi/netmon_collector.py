@@ -75,6 +75,7 @@ LLDP_SPALTEN = {
 # Spalten der ifTable/ifXTable, die wir brauchen
 IF_SPALTEN = {
     ".1.3.6.1.2.1.2.2.1.3": "typ",          # ifType (6 = Ethernet, 161 = LAG)
+    ".1.3.6.1.2.1.2.2.1.6": "mac",          # ifPhysAddress (Kennung ohne LLDP)
     ".1.3.6.1.2.1.2.2.1.7": "admin",        # 1 = up, 2 = down
     ".1.3.6.1.2.1.2.2.1.8": "oper",
     ".1.3.6.1.2.1.31.1.1.1.1": "name",      # ifName
@@ -134,6 +135,11 @@ class Config:
     @property
     def seed_ips(self):
         return [ip.strip() for ip in self.ini["discovery"]["seed_ips"].split(",") if ip.strip()]
+
+    @property
+    def controller_ip(self):
+        """[wlan] controller_ip oder "" — der WLAN-Controller ist optional."""
+        return self.ini["wlan"].get("controller_ip", "").strip() if "wlan" in self.ini else ""
 
     @property
     def stumm_schwelle(self):
@@ -267,7 +273,8 @@ def node_abfragen(cfg, ip, verbose):
         return None
 
     node = {"ip": ip, "name": "", "modell": "", "firmware": "", "standort": "",
-            "matchKey": f"ip:{ip}", "ports": {}, "nachbarn": [], "lokalePorts": {}}
+            "matchKey": f"ip:{ip}", "mac": "", "ports": {}, "nachbarn": [],
+            "lokalePorts": {}}
 
     for oid, typ, roh in system:
         if oid == OID["sysDescr"]:
@@ -296,6 +303,8 @@ def node_abfragen(cfg, ip, verbose):
             eintrag = interfaces.setdefault(int(index), {})
             if feld in ("typ", "admin", "oper", "inOctets", "outOctets", "speed"):
                 eintrag[feld] = wert_zahl(roh)
+            elif feld == "mac":
+                eintrag[feld] = mac_format(wert_bytes(typ, roh))
             else:
                 eintrag[feld] = wert_text(typ, roh)
 
@@ -311,6 +320,8 @@ def node_abfragen(cfg, ip, verbose):
         ist_lag = werte.get("typ") == 161 or name.lower().startswith("lag")
         if not ist_physisch and not (ist_lag and werte.get("oper") == 1):
             continue
+        if ist_physisch and not node["mac"] and werte.get("mac"):
+            node["mac"] = werte["mac"]   # Ersatz-Kennung für Geräte ohne LLDP
         node["ports"][index] = {
             "name": werte.get("name", ""),
             "admin": STATUS_TEXT.get(werte.get("admin"), ""),
@@ -727,6 +738,19 @@ def sammellauf(cfg, verbose):
                                  "name": "", "modell": "", "firmware": "",
                                  "standort": "", "fehlversuche": 0}
 
+    # Der WLAN-Controller ([wlan] controller_ip) ist selbst ein Knoten (Art
+    # "controller"): Karte, Detailseite, Alarm bei Ausfall. Abgefragt wird er
+    # im selben Durchlauf wie die Switches; seine AP-/Client-Tabellen folgen in 3d.
+    controller_ip = cfg.controller_ip
+    if controller_ip:
+        c_key = next((k for k, n in nodes.items() if n.get("ip") == controller_ip), None)
+        if c_key is None:
+            nodes[f"ip:{controller_ip}"] = {"ip": controller_ip, "art": "controller",
+                                            "status": "aktiv", "name": "", "modell": "",
+                                            "firmware": "", "standort": "", "fehlversuche": 0}
+        elif nodes[c_key]["art"] != "controller":
+            nodes[c_key].update({"art": "controller", "status": "aktiv", "fehlversuche": 0})
+
     duplikate_zusammenfuehren(nodes, state)
 
     # 1) "entdeckt"-Switches: je Lauf einmal anklopfen — klappt der
@@ -740,20 +764,22 @@ def sammellauf(cfg, verbose):
                 node["status"] = "aktiv"
                 node["fehlversuche"] = 0
 
-    # 2) Alle aktiven/stummen Switches abfragen
+    # 2) Alle aktiven/stummen Switches (und den WLAN-Controller) abfragen
     ergebnisse = {}   # matchKey -> Abfrage-Ergebnis
     gesehen = set()   # matchKeys, die in diesem Lauf lebten (Poll oder LLDP)
     for key in list(nodes.keys()):
         node = nodes[key]
-        if node["art"] != "switch" or node["status"] == "entdeckt":
+        if node["art"] not in ("switch", "controller") or node["status"] == "entdeckt":
             continue
         daten = node_abfragen(cfg, node["ip"], verbose)
         if daten is None:
             node["fehlversuche"] = node.get("fehlversuche", 0) + 1
             if node["status"] == "aktiv" and node["fehlversuche"] >= cfg.stumm_schwelle:
-                log(f"Switch antwortet nicht mehr: {node['ip']} ({node.get('name') or key}) -> stumm")
+                log(f"Knoten antwortet nicht mehr: {node['ip']} ({node.get('name') or key}) -> stumm")
                 node["status"] = "stumm"
             continue
+        if node["art"] == "controller" and daten["matchKey"].startswith("ip:") and daten["mac"]:
+            daten["matchKey"] = daten["mac"]   # WC7500 spricht kein LLDP: LAN-MAC als Kennung
 
         node.update({"status": "aktiv", "fehlversuche": 0,
                      "name": daten["name"] or node.get("name", ""),
@@ -920,11 +946,16 @@ def sammellauf(cfg, verbose):
     #     der FDB-Zuordnung — der Switch "lernt" sie am AP-Port, aber gemeint
     #     ist: das Gerät hängt am AP.
     wlan_csv, wlan_macs = [], set()
-    wlan_cfg = cfg.ini["wlan"] if "wlan" in cfg.ini else None
-    if wlan_cfg is not None and wlan_cfg.get("controller_ip"):
-        controller = wlan_cfg["controller_ip"]
-        aps = wlan_tabelle(cfg, controller, "aps", verbose)
-        clients = wlan_tabelle(cfg, controller, "clients", verbose)
+    c_key = next((k for k, n in nodes.items()
+                  if n["art"] == "controller" and n.get("ip") == controller_ip), None)
+    if c_key is not None and c_key not in gesehen:
+        log(f"WC7500 {controller_ip} antwortet nicht — AP-/Client-Tabellen übersprungen")
+    if c_key is not None and c_key in gesehen:
+        treffer = fdb_lookup.get(c_key)   # Kante Controller -> Switch (Port mit seiner MAC)
+        if treffer and treffer[1] != c_key:
+            extra_links.append([treffer[1], treffer[2], c_key, "", "", ""])
+        aps = wlan_tabelle(cfg, controller_ip, "aps", verbose)
+        clients = wlan_tabelle(cfg, controller_ip, "clients", verbose)
         for ap in aps:
             verbunden = ap.get("status", "") == "Connected"
             key = next((k for k, n in nodes.items()
@@ -1099,9 +1130,9 @@ def wlan_erkunden(cfg, unter_oid):
     Ohne Argument: grober Überblick (Gruppen in Tiefe 4). Mit einer OID als
     Argument (z. B. der Entry einer Tabelle wie ....8.6.4.1.1): dieser Ast
     SPALTENWEISE — je Spalte die Zeilenzahl und drei Beispielwerte."""
-    if "wlan" not in cfg.ini or not cfg.ini["wlan"].get("controller_ip"):
+    ip = cfg.controller_ip
+    if not ip:
         sys.exit("FEHLER: Abschnitt [wlan] mit controller_ip fehlt in der Konfiguration.")
-    ip = cfg.ini["wlan"]["controller_ip"]
     if unter_oid:
         basis, tiefe = unter_oid.rstrip("."), 1
     else:
