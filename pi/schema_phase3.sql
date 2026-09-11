@@ -40,3 +40,18 @@ CREATE TABLE __SCHEMA__.network_wlan_stage (
     ssid    NVARCHAR(64)  NULL
 );
 GO
+
+-- Schnappschuss der aktuell eingebuchten WLAN-Clients (Stand des letzten
+-- Laufs, wird je Lauf komplett ersetzt). Anders als network_devices kennt
+-- diese Tabelle auch Geräte, die nie per nmap/ARP erfasst wurden — etwa
+-- Gäste-Handys — und ist damit die Grundlage für den Andrang-Alarm
+-- („mehr als N Geräte gleichzeitig im Gäste-WLAN").
+IF OBJECT_ID('__SCHEMA__.network_wlan_clients', 'U') IS NULL
+CREATE TABLE __SCHEMA__.network_wlan_clients (
+    mac        NVARCHAR(20)  NOT NULL PRIMARY KEY,
+    ap_ip      NVARCHAR(45)  NULL,
+    ap_name    NVARCHAR(160) NULL,
+    ssid       NVARCHAR(64)  NULL,
+    gesehen_am DATETIME2(0)  NOT NULL
+);
+GO

@@ -4,6 +4,7 @@ namespace Intranet\Modules\Netzwerk\Tasks\Netzwerk;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Intranet\Modules\Netzwerk\Models\AlarmZustand;
 use Intranet\Modules\Netzwerk\Models\KnotenStatus;
 use Intranet\Modules\Netzwerk\Netzwerk;
 use Intranet\Modules\Netzwerk\Support\DemoDaten;
@@ -32,15 +33,28 @@ class Alarme extends EkkonTask
 {
     public string $category = 'Netzwerk';
 
-    public string $description = 'Wacht über die Netzwerk-Infrastruktur: meldet Knoten, die nicht mehr antworten, Rückkehrer und neu entdeckte Geräte.';
+    public string $description = 'Wacht über die Netzwerk-Infrastruktur: meldet Knoten, die nicht mehr antworten, Rückkehrer, neu entdeckte Geräte und Andrang in einem WLAN (z. B. Gäste).';
 
     public array $meldungsarten = [
         'netzwerk-knoten-offline' => 'Netzwerk: Gerät antwortet nicht mehr',
         'netzwerk-knoten-wieder-online' => 'Netzwerk: Gerät wieder erreichbar',
         'netzwerk-knoten-entdeckt' => 'Netzwerk: neues Gerät entdeckt, noch nicht eingebunden',
+        'netzwerk-wlan-andrang' => 'Netzwerk: zu viele Geräte gleichzeitig in einem WLAN',
     ];
 
     public array $einstellungen = [
+        'wlan_ssid' => [
+            'typ' => 'text',
+            'label' => 'Überwachtes WLAN (SSID)',
+            'standard' => '',
+            'hilfe' => 'Name des WLANs, dessen Andrang überwacht wird (z. B. das Gäste-WLAN). Leer = keine Überwachung.',
+        ],
+        'wlan_schwelle' => [
+            'typ' => 'zahl',
+            'label' => 'Andrang ab (Geräte)',
+            'standard' => 10,
+            'hilfe' => 'Meldet, sobald MEHR als so viele Geräte gleichzeitig in diesem WLAN eingebucht sind. Gemeldet wird der Übergang, nicht jeder Lauf; die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder darunter lag.',
+        ],
         'schwelle_minuten' => [
             'typ' => 'zahl',
             'label' => 'Offline ab (Minuten)',
@@ -167,7 +181,9 @@ class Alarme extends EkkonTask
                 $entdeckt, fn ($g) => $g['matchkey'], 'netzwerk-entdeckt-batch');
         }
 
-        $zaehler = ['offline' => count($offline), 'wieder_online' => count($wieder), 'entdeckt' => count($entdeckt)];
+        $andrang = $this->wlanAndrang($ohneZiel, $schwelle);
+
+        $zaehler = ['offline' => count($offline), 'wieder_online' => count($wieder), 'entdeckt' => count($entdeckt), 'wlan_andrang' => $andrang];
 
         if ($baseline) {
             $this->msg('Erster Lauf: '.count($gesehen).' Knoten als Ausgangslage gemerkt — noch keine Meldungen.');
@@ -180,6 +196,89 @@ class Alarme extends EkkonTask
         }
 
         return $zaehler + ['knoten' => count($gesehen), 'baseline' => $baseline, 'entfernt' => $entfernt];
+    }
+
+    /**
+     * WLAN-Andrang: sind in der überwachten SSID gerade MEHR Geräte
+     * eingebucht als erlaubt? Quelle ist der Schnappschuss des Collectors
+     * (network_wlan_clients, je Lauf ersetzt) — NICHT network_devices, denn
+     * dort landen nur Geräte, die je per nmap/ARP erfasst wurden; Gäste-Handys
+     * fehlen dort. Gemeldet wird der Übergang (Gedächtnis: netzwerk_alarm_
+     * zustand); ein veralteter Schnappschuss (Collector steht) meldet nichts.
+     *
+     * @return int aktuelle Anzahl (0, wenn nicht überwacht)
+     */
+    private function wlanAndrang(array &$ohneZiel, int $schwelleMinuten): int
+    {
+        $ssid = trim((string) $this->einstellung('wlan_ssid'));
+        if ($ssid === '') {
+            return 0;
+        }
+        $grenze = max(0, (int) $this->einstellung('wlan_schwelle'));
+
+        if ((bool) config('netzwerk.demo', false)) {
+            $anzahl = 0;
+            foreach (DemoDaten::kartenRohdaten()['nodes'] as $n) {
+                foreach (DemoDaten::knotenGeraete((int) $n->id) as $g) {
+                    if (($g->verbunden_via ?? '') === 'wlan' && mb_strtolower((string) $g->ssid) === mb_strtolower($ssid)) {
+                        $anzahl++;
+                    }
+                }
+            }
+            $alterMinuten = 0;
+        } else {
+            try {
+                // Zählen auf dem Server, Datum als Text: Datetime-Werte roh
+                // über ODBC zu lesen ist die bekannte Bufferfalle.
+                $zeile = DB::connection(Netzwerk::connection())->selectOne(sprintf(
+                    'SELECT COUNT(*) AS anzahl, '
+                    ."(SELECT DATEDIFF(minute, MAX(gesehen_am), SYSDATETIME()) FROM %s.network_wlan_clients) AS alter_minuten "
+                    .'FROM %s.network_wlan_clients WHERE LOWER(ssid) = LOWER(?)',
+                    Netzwerk::schema(), Netzwerk::schema(),
+                ), [$ssid]);
+            } catch (Throwable $e) {
+                $this->msg('WLAN-Schnappschuss nicht lesbar (network_wlan_clients fehlt? Collector-Update + --init-db): '.$e->getMessage());
+
+                return 0;
+            }
+            $anzahl = (int) ($zeile->anzahl ?? 0);
+            $roh = trim((string) ($zeile->alter_minuten ?? ''));
+            $alterMinuten = $roh === '' ? null : (int) $roh;
+        }
+
+        if ($alterMinuten === null || $alterMinuten > $schwelleMinuten) {
+            $this->msg('WLAN „'.$ssid.'": Schnappschuss der eingebuchten Geräte ist '
+                .($alterMinuten === null ? 'leer' : $alterMinuten.' Minuten alt').' — kein Andrang-Urteil möglich (läuft der Collector?).');
+
+            return $anzahl;
+        }
+
+        $schluessel = 'wlan-andrang:'.mb_strtolower($ssid);
+        $zustand = AlarmZustand::lesen($schluessel);
+        $warUeber = (bool) ($zustand['ueber'] ?? false);
+        $istUeber = $anzahl > $grenze;
+
+        if ($istUeber && ! $warUeber) {
+            $seit = now();
+            $ergebnis = $this->benachrichtige('netzwerk-wlan-andrang',
+                '📶 Andrang im WLAN „'.$ssid.'": '.$anzahl.' Geräte gleichzeitig',
+                'Im WLAN „'.$ssid.'" sind gerade '.$anzahl.' Geräte eingebucht (Schwelle: mehr als '.$grenze.').'
+                ."\n\nStand: ".$seit->locale('de')->isoFormat('LLL').' Uhr. Die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder unter die Schwelle gefallen ist.',
+                ['ssid' => $ssid, 'anzahl' => $anzahl, 'schwelle' => $grenze],
+                'netzwerk-wlan-andrang:'.$schluessel.':'.$seit->getTimestamp());
+            if ($ergebnis['ohne_ziel'] ?? false) {
+                $ohneZiel[] = 'netzwerk-wlan-andrang';
+            }
+            $this->msg('Andrang im WLAN „'.$ssid.'": '.$anzahl.' Geräte (Schwelle '.$grenze.') — gemeldet.');
+            AlarmZustand::schreiben($schluessel, ['ueber' => true, 'seit' => $seit->toDateTimeString(), 'anzahl' => $anzahl]);
+        } elseif (! $istUeber && $warUeber) {
+            $this->msg('WLAN „'.$ssid.'": Andrang vorbei, '.$anzahl.' Geräte (Schwelle '.$grenze.').');
+            AlarmZustand::schreiben($schluessel, ['ueber' => false, 'anzahl' => $anzahl]);
+        } else {
+            $this->msg('WLAN „'.$ssid.'": '.$anzahl.' Geräte eingebucht (Schwelle '.$grenze.').');
+        }
+
+        return $anzahl;
     }
 
     /**

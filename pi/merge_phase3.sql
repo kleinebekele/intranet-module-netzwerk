@@ -40,6 +40,17 @@ JOIN __SCHEMA__.network_nodes n
 WHERE NULLIF(s.mac, '') IS NOT NULL;
 GO
 
+-- Schnappschuss der eingebuchten Clients (Grundlage für den Andrang-Alarm
+-- des Moduls): je Lauf komplett ersetzt, doppelte MACs auf eine Zeile.
+DELETE FROM __SCHEMA__.network_wlan_clients;
+INSERT INTO __SCHEMA__.network_wlan_clients (mac, ap_ip, ap_name, ssid, gesehen_am)
+SELECT LOWER(s.mac), MAX(NULLIF(s.ap_ip, '')), MAX(NULLIF(s.ap_name, '')),
+       MAX(NULLIF(s.ssid, '')), SYSDATETIME()
+FROM __SCHEMA__.network_wlan_stage s
+WHERE NULLIF(s.mac, '') IS NOT NULL
+GROUP BY LOWER(s.mac);
+GO
+
 TRUNCATE TABLE __SCHEMA__.network_fdb_stage;
 TRUNCATE TABLE __SCHEMA__.network_wlan_stage;
 GO

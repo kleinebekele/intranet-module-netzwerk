@@ -92,7 +92,10 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 6. ✅ Alarme – ist die Ekkon-Basis (`do1emu/module-ekkon`) installiert, registriert das
    Modul den Task **Netzwerk/Alarme**: meldet über die Ekkon-Benachrichtigungsrouten,
    wenn ein eingebundener Knoten nicht mehr antwortet (Schwelle einstellbar), wieder
-   erreichbar ist (abschaltbar) oder ein neues Gerät entdeckt wurde. Der erste Lauf
+   erreichbar ist (abschaltbar), ein neues Gerät entdeckt wurde oder in einem
+   WLAN (SSID einstellbar, z. B. Gäste) mehr Geräte gleichzeitig eingebucht sind als
+   erlaubt (Schwelle einstellbar; gemeldet wird der Übergang, Quelle ist der
+   Schnappschuss `network_wlan_clients` des Collectors). Der erste Lauf
    merkt sich nur die Ausgangslage. ⚠️ Ohne eingerichtete Route (Ekkon →
    Benachrichtigungen) erreichen die Meldungen niemanden — der Task weist in seiner
    Lauf-Historie darauf hin.

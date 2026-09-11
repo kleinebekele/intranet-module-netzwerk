@@ -102,7 +102,11 @@ des Controllers: Die verwalteten APs werden Nodes (Name, IP,
 Modell, Standort, Status; Kante zum Switch aus der FDB — der Port, an dem die
 LAN-MAC des AP gelernt wurde), und eingebuchte Clients bekommen statt des
 Switch-Ports ihre WLAN-Zuordnung „AP + SSID" (die gewinnt gegen die FDB, denn
-der Switch lernt Client-MACs nur stellvertretend am AP-Port).
+der Switch lernt Client-MACs nur stellvertretend am AP-Port). Zusätzlich landet
+je Lauf ein Schnappschuss ALLER eingebuchten Clients in `network_wlan_clients`
+(komplett ersetzt; auch Geräte, die nie per nmap/ARP erfasst wurden) — darauf
+baut der Andrang-Alarm des Moduls (Task Netzwerk/Alarme, „mehr als N Geräte
+in SSID X"). Tabelle kommt mit `--init-db`.
 
 `--wlan-erkunden [OID]` walkt den Enterprise-Baum des Controllers und zeigt die
 Tabellen gruppiert (mit OID-Argument: spaltenweise) — Werkzeug, mit dem die
