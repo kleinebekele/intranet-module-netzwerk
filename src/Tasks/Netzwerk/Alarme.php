@@ -43,15 +43,15 @@ class Alarme extends EkkonTask
     ];
 
     public array $einstellungen = [
-        'wlan_ssid' => [
+        'wlan_ssids' => [
             'typ' => 'text',
-            'label' => 'Überwachtes WLAN (SSID)',
+            'label' => 'Überwachte WLANs (SSIDs)',
             'standard' => '',
-            'hilfe' => 'Name des WLANs, dessen Andrang überwacht wird (z. B. das Gäste-WLAN). Leer = keine Überwachung.',
+            'hilfe' => 'Mehrere Gruppen durch Semikolon trennen. SSIDs einer Gruppe mit Plus verbinden, dann werden sie zusammengezählt (2,4- und 5-GHz-Netz desselben WLANs). Eigene Schwelle je Gruppe mit =Zahl. Beispiel: Gast-2G+Gast-5G=10; Lehrer=30. Leer = keine Überwachung.',
         ],
         'wlan_schwelle' => [
             'typ' => 'zahl',
-            'label' => 'Andrang ab (Geräte)',
+            'label' => 'Andrang ab (Geräte, Standard je Gruppe)',
             'standard' => 10,
             'hilfe' => 'Meldet, sobald MEHR als so viele Geräte gleichzeitig in diesem WLAN eingebucht sind. Gemeldet wird der Übergang, nicht jeder Lauf; die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder darunter lag.',
         ],
@@ -199,86 +199,141 @@ class Alarme extends EkkonTask
     }
 
     /**
-     * WLAN-Andrang: sind in der überwachten SSID gerade MEHR Geräte
+     * WLAN-Andrang: sind in einem überwachten WLAN gerade MEHR Geräte
      * eingebucht als erlaubt? Quelle ist der Schnappschuss des Collectors
      * (network_wlan_clients, je Lauf ersetzt) — NICHT network_devices, denn
      * dort landen nur Geräte, die je per nmap/ARP erfasst wurden; Gäste-Handys
      * fehlen dort. Gemeldet wird der Übergang (Gedächtnis: netzwerk_alarm_
      * zustand); ein veralteter Schnappschuss (Collector steht) meldet nichts.
      *
-     * @return int aktuelle Anzahl (0, wenn nicht überwacht)
+     * Einstellung „wlan_ssids": Gruppen durch Semikolon, SSIDs einer Gruppe
+     * durch Plus (werden zusammengezählt — 2,4- und 5-GHz-Netz desselben
+     * WLANs), optional „=Schwelle" je Gruppe, sonst wlan_schwelle.
+     *
+     * @return int Summe der eingebuchten Geräte aller überwachten Gruppen
      */
     private function wlanAndrang(array &$ohneZiel, int $schwelleMinuten): int
     {
-        $ssid = trim((string) $this->einstellung('wlan_ssid'));
-        if ($ssid === '') {
+        $gruppen = $this->wlanGruppen();
+        if ($gruppen === []) {
             return 0;
         }
-        $grenze = max(0, (int) $this->einstellung('wlan_schwelle'));
 
+        // Anzahl je SSID (klein geschrieben) — eine Abfrage für alle Gruppen.
         if ((bool) config('netzwerk.demo', false)) {
-            $anzahl = 0;
+            $jeSsid = [];
             foreach (DemoDaten::kartenRohdaten()['nodes'] as $n) {
                 foreach (DemoDaten::knotenGeraete((int) $n->id) as $g) {
-                    if (($g->verbunden_via ?? '') === 'wlan' && mb_strtolower((string) $g->ssid) === mb_strtolower($ssid)) {
-                        $anzahl++;
+                    if (($g->verbunden_via ?? '') === 'wlan' && (string) $g->ssid !== '') {
+                        $k = mb_strtolower((string) $g->ssid);
+                        $jeSsid[$k] = ($jeSsid[$k] ?? 0) + 1;
                     }
                 }
             }
             $alterMinuten = 0;
         } else {
             try {
-                // Zählen auf dem Server, Datum als Text: Datetime-Werte roh
+                // Zählen auf dem Server, Alter als Zahl: Datetime-Werte roh
                 // über ODBC zu lesen ist die bekannte Bufferfalle.
-                $zeile = DB::connection(Netzwerk::connection())->selectOne(sprintf(
-                    'SELECT COUNT(*) AS anzahl, '
-                    ."(SELECT DATEDIFF(minute, MAX(gesehen_am), SYSDATETIME()) FROM %s.network_wlan_clients) AS alter_minuten "
-                    .'FROM %s.network_wlan_clients WHERE LOWER(ssid) = LOWER(?)',
-                    Netzwerk::schema(), Netzwerk::schema(),
-                ), [$ssid]);
+                $zeilen = DB::connection(Netzwerk::connection())->select(sprintf(
+                    'SELECT LOWER(ssid) AS ssid, COUNT(*) AS anzahl FROM %s.network_wlan_clients WHERE ssid IS NOT NULL GROUP BY LOWER(ssid)',
+                    Netzwerk::schema(),
+                ));
+                $alt = DB::connection(Netzwerk::connection())->selectOne(sprintf(
+                    'SELECT DATEDIFF(minute, MAX(gesehen_am), SYSDATETIME()) AS alter_minuten FROM %s.network_wlan_clients',
+                    Netzwerk::schema(),
+                ));
             } catch (Throwable $e) {
                 $this->msg('WLAN-Schnappschuss nicht lesbar (network_wlan_clients fehlt? Collector-Update + --init-db): '.$e->getMessage());
 
                 return 0;
             }
-            $anzahl = (int) ($zeile->anzahl ?? 0);
-            $roh = trim((string) ($zeile->alter_minuten ?? ''));
+            $jeSsid = [];
+            foreach ($zeilen as $z) {
+                $jeSsid[trim((string) $z->ssid)] = (int) $z->anzahl;
+            }
+            $roh = trim((string) ($alt->alter_minuten ?? ''));
             $alterMinuten = $roh === '' ? null : (int) $roh;
         }
 
         if ($alterMinuten === null || $alterMinuten > $schwelleMinuten) {
-            $this->msg('WLAN „'.$ssid.'": Schnappschuss der eingebuchten Geräte ist '
-                .($alterMinuten === null ? 'leer' : $alterMinuten.' Minuten alt').' — kein Andrang-Urteil möglich (läuft der Collector?).');
+            $this->msg('WLAN-Andrang: Schnappschuss der eingebuchten Geräte ist '
+                .($alterMinuten === null ? 'leer' : $alterMinuten.' Minuten alt').' — kein Urteil möglich (läuft der Collector?).');
 
-            return $anzahl;
+            return 0;
         }
 
-        $schluessel = 'wlan-andrang:'.mb_strtolower($ssid);
-        $zustand = AlarmZustand::lesen($schluessel);
-        $warUeber = (bool) ($zustand['ueber'] ?? false);
-        $istUeber = $anzahl > $grenze;
-
-        if ($istUeber && ! $warUeber) {
-            $seit = now();
-            $ergebnis = $this->benachrichtige('netzwerk-wlan-andrang',
-                '📶 Andrang im WLAN „'.$ssid.'": '.$anzahl.' Geräte gleichzeitig',
-                'Im WLAN „'.$ssid.'" sind gerade '.$anzahl.' Geräte eingebucht (Schwelle: mehr als '.$grenze.').'
-                ."\n\nStand: ".$seit->locale('de')->isoFormat('LLL').' Uhr. Die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder unter die Schwelle gefallen ist.',
-                ['ssid' => $ssid, 'anzahl' => $anzahl, 'schwelle' => $grenze],
-                'netzwerk-wlan-andrang:'.$schluessel.':'.$seit->getTimestamp());
-            if ($ergebnis['ohne_ziel'] ?? false) {
-                $ohneZiel[] = 'netzwerk-wlan-andrang';
+        $summe = 0;
+        foreach ($gruppen as $gruppe) {
+            $anzahl = 0;
+            $teile = [];
+            foreach ($gruppe['ssids'] as $ssid) {
+                $n = $jeSsid[mb_strtolower($ssid)] ?? 0;
+                $anzahl += $n;
+                $teile[] = $ssid.': '.$n;
             }
-            $this->msg('Andrang im WLAN „'.$ssid.'": '.$anzahl.' Geräte (Schwelle '.$grenze.') — gemeldet.');
-            AlarmZustand::schreiben($schluessel, ['ueber' => true, 'seit' => $seit->toDateTimeString(), 'anzahl' => $anzahl]);
-        } elseif (! $istUeber && $warUeber) {
-            $this->msg('WLAN „'.$ssid.'": Andrang vorbei, '.$anzahl.' Geräte (Schwelle '.$grenze.').');
-            AlarmZustand::schreiben($schluessel, ['ueber' => false, 'anzahl' => $anzahl]);
-        } else {
-            $this->msg('WLAN „'.$ssid.'": '.$anzahl.' Geräte eingebucht (Schwelle '.$grenze.').');
+            $summe += $anzahl;
+            $grenze = $gruppe['schwelle'];
+            $anzeige = implode(' + ', $gruppe['ssids']);
+            $detail = count($teile) > 1 ? ' ('.implode(', ', $teile).')' : '';
+
+            $schluessel = 'wlan-andrang:'.mb_strtolower(implode('+', $gruppe['ssids']));
+            $zustand = AlarmZustand::lesen($schluessel);
+            $warUeber = (bool) ($zustand['ueber'] ?? false);
+            $istUeber = $anzahl > $grenze;
+
+            if ($istUeber && ! $warUeber) {
+                $seit = now();
+                $ergebnis = $this->benachrichtige('netzwerk-wlan-andrang',
+                    '📶 Andrang im WLAN „'.$anzeige.'": '.$anzahl.' Geräte gleichzeitig',
+                    'Im WLAN „'.$anzeige.'" sind gerade '.$anzahl.' Geräte eingebucht'.$detail.' (Schwelle: mehr als '.$grenze.').'
+                    ."\n\nStand: ".$seit->locale('de')->isoFormat('LLL').' Uhr. Die nächste Meldung kommt erst, wenn die Zahl zwischendurch wieder unter die Schwelle gefallen ist.',
+                    ['ssids' => $gruppe['ssids'], 'anzahl' => $anzahl, 'schwelle' => $grenze],
+                    'netzwerk-wlan-andrang:'.$schluessel.':'.$seit->getTimestamp());
+                if ($ergebnis['ohne_ziel'] ?? false) {
+                    $ohneZiel[] = 'netzwerk-wlan-andrang';
+                }
+                $this->msg('Andrang im WLAN „'.$anzeige.'": '.$anzahl.' Geräte'.$detail.' (Schwelle '.$grenze.') — gemeldet.');
+                AlarmZustand::schreiben($schluessel, ['ueber' => true, 'seit' => $seit->toDateTimeString(), 'anzahl' => $anzahl]);
+            } elseif (! $istUeber && $warUeber) {
+                $this->msg('WLAN „'.$anzeige.'": Andrang vorbei, '.$anzahl.' Geräte'.$detail.' (Schwelle '.$grenze.').');
+                AlarmZustand::schreiben($schluessel, ['ueber' => false, 'anzahl' => $anzahl]);
+            } else {
+                $this->msg('WLAN „'.$anzeige.'": '.$anzahl.' Geräte eingebucht'.$detail.' (Schwelle '.$grenze.').');
+            }
         }
 
-        return $anzahl;
+        return $summe;
+    }
+
+    /**
+     * Die Einstellung „wlan_ssids" zerlegen: „Gast-2G+Gast-5G=10; Lehrer=30".
+     *
+     * @return list<array{ssids: list<string>, schwelle: int}>
+     */
+    private function wlanGruppen(): array
+    {
+        $standard = max(0, (int) $this->einstellung('wlan_schwelle'));
+        $gruppen = [];
+        foreach (explode(';', (string) $this->einstellung('wlan_ssids')) as $eintrag) {
+            $eintrag = trim($eintrag);
+            if ($eintrag === '') {
+                continue;
+            }
+            $schwelle = $standard;
+            if (str_contains($eintrag, '=')) {
+                [$eintrag, $zahl] = array_map('trim', explode('=', $eintrag, 2));
+                if ($zahl !== '' && is_numeric($zahl)) {
+                    $schwelle = max(0, (int) $zahl);
+                }
+            }
+            $ssids = array_values(array_filter(array_map('trim', explode('+', $eintrag)), fn ($s) => $s !== ''));
+            if ($ssids !== []) {
+                $gruppen[] = ['ssids' => $ssids, 'schwelle' => $schwelle];
+            }
+        }
+
+        return $gruppen;
     }
 
     /**
