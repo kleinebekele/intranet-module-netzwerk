@@ -89,7 +89,7 @@ fällt der Collector aus, zeigt die Übersicht ehrlich offline.
    die Firewall-Interfaces erscheinen als Ports ihres Knotens)
 5. ✅ Traffic-Statistiken – Seite „Statistik": Verläufe je Port (24 h / 7 Tage / 30 Tage)
    aus `network_port_stats`, serverseitig gerenderte SVG-Charts
-6. ✅ Alarme – ist die Ekkon-Basis (`do1emu/module-ekkon`) installiert, registriert das
+6. ✅ Alarme – über Ekkon, das Task-System der Plattform (seit 2026-09 fest im Core), registriert das
    Modul den Task **Netzwerk/Alarme**: meldet über die Ekkon-Benachrichtigungsrouten,
    wenn ein eingebundener Knoten nicht mehr antwortet (Schwelle einstellbar), wieder
    erreichbar ist (abschaltbar), ein neues Gerät entdeckt wurde oder in einem

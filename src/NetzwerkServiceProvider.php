@@ -39,12 +39,10 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
         // Config, damit er bei Bedarf zur Datenquelle passen darf.
         config(['database.connections.'.Netzwerk::connection() => config('netzwerk.mssql')]);
 
-        // Kür: Ist die Ekkon-Basis installiert, meldet das Modul seinen
-        // Alarm-Task an (Netzwerk/Alarme). Ohne Ekkon fehlt nur der Task —
-        // alles andere läuft unverändert (weiche Abhängigkeit, siehe suggest).
-        // Der Task braucht Task-Einstellungen (Basis ≥ v1.1) — eine ältere
-        // Basis bekommt ihn gar nicht erst, statt am fehlenden einstellung()
-        // zu scheitern.
+        // Alarm-Task anmelden (Netzwerk/Alarme). Ekkon ist seit 2026-09 fester
+        // Bestandteil der Plattform; die alten Klassennamen bildet sie selbst ab.
+        // Die Prüfung bleibt für ältere Plattform-Stände ohne Ekkon (dann fehlt
+        // nur der Task) bzw. mit einer Ekkon-Basis vor v1.1 (ohne einstellung()).
         if (class_exists(\Intranet\Modules\Ekkon\Support\TaskRegistry::class)
                 && method_exists(\Intranet\Modules\Ekkon\Tasks\EkkonTask::class, 'einstellung')) {
             $this->app->singletonIf(\Intranet\Modules\Ekkon\Support\TaskRegistry::class);
@@ -52,6 +50,10 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
                 $this->moduleBasePath().'/src/Tasks',
                 __NAMESPACE__.'\\Tasks',
                 'do1emu/module-netzwerk',
+                // Modul-Key: der Task läuft nur, solange das Modul in der
+                // Modulverwaltung aktiv ist, und steht in der Übersicht unter
+                // „Netzwerk". Ältere Ekkon-Stände ignorieren das Argument.
+                'netzwerk',
             );
         }
     }
