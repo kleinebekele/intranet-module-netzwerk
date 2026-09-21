@@ -186,7 +186,9 @@ class Alarme extends EkkonTask
 
         if ($baseline) {
             $this->msg('Erster Lauf: '.count($gesehen).' Knoten als Ausgangslage gemerkt — noch keine Meldungen.');
-        } else {
+        } elseif ($offline !== [] || $wieder !== [] || $entdeckt !== []) {
+            // Ruhige Läufe schweigen: ohne Nachricht blendet die Ekkon-Historie
+            // den Lauf aus — sonst 144 gleichlautende Zeilen am Tag.
             $this->msg(sprintf('%d Knoten geprüft: %d neu offline, %d wieder online, %d neu entdeckt.',
                 count($gesehen), $zaehler['offline'], $zaehler['wieder_online'], $zaehler['entdeckt']));
         }
@@ -297,8 +299,6 @@ class Alarme extends EkkonTask
             } elseif (! $istUeber && $warUeber) {
                 $this->msg('WLAN „'.$anzeige.'": Andrang vorbei, '.$anzahl.' Geräte'.$detail.' (Schwelle '.$grenze.').');
                 AlarmZustand::schreiben($schluessel, ['ueber' => false, 'anzahl' => $anzahl]);
-            } else {
-                $this->msg('WLAN „'.$anzeige.'": '.$anzahl.' Geräte eingebucht'.$detail.' (Schwelle '.$grenze.').');
             }
         }
 
