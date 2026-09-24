@@ -57,7 +57,10 @@ class DhcpController extends Controller
         $inventar = [];
         foreach ($liste->geraete()['segmente'] as $geraete) {
             foreach ($geraete as $g) {
-                $inventar[$g->ip] = $g;
+                // Zwei Einträge mit derselben IP (Gerät gewechselt): der aktive gewinnt.
+                if (! isset($inventar[$g->ip]) || ($g->online && ! $inventar[$g->ip]->online)) {
+                    $inventar[$g->ip] = $g;
+                }
             }
         }
         $nachschlagen = GeraeteMeta::nachschlagen();

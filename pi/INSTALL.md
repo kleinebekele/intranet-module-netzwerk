@@ -125,6 +125,13 @@ eigener Node auf der Karte; ihre Kante zum Switch leitet der Collector aus der
 FDB ab (der Port, an dem ihre MAC gelernt wurde). DNS-Antworten werden eine
 Stunde im State zwischengespeichert.
 
+**Lebenszeichen ohne nmap:** Wer in der ARP-Tabelle oder beim WLAN-Controller
+steht, bekommt `lastSeen` und seine aktuelle IP fortgeschrieben; unbekannte
+MACs werden als neue Geräte angelegt (nur in Netzen, die das Inventar schon
+kennt, `segment` = /24). Damit hält der Collector das Geräte-Inventar allein
+aktuell – `netscan.sh` ist nicht mehr nötig. Geräte, die nie über die Firewall
+sprechen, bleiben unsichtbar.
+
 ## VLANs je Port
 
 Jeder Sammellauf liest zusätzlich die Q-BRIDGE-VLAN-Tabellen der Switches
