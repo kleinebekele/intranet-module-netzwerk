@@ -38,6 +38,12 @@ class DhcpController extends Controller
         '1j' => ['1 Jahr', 24 * 365],
     ];
 
+    private const BELEGUNG_TEXT = [
+        'reservierung' => 'Reservierung',
+        'lease' => 'Lease',
+        'ping' => 'antwortet im Ping-Scan',
+    ];
+
     /** Größere Netze bekommen keine Adresskarte (Kästchen je Adresse). */
     private const KARTE_MAX = 1024;
 
@@ -170,8 +176,12 @@ class DhcpController extends Controller
         return $inventar;
     }
 
-    /** Adresse von Hand als belegt markieren (oder Bezeichnung ändern). */
-    public function manuellSpeichern(Request $request): RedirectResponse
+    /**
+     * Adresse von Hand als belegt markieren (oder Bezeichnung ändern) – nur,
+     * wenn automatisch nichts erkannt wird (keine Reservierung, keine Lease,
+     * kein antwortendes Gerät). Sonst wäre der Eintrag doppelt oder falsch.
+     */
+    public function manuellSpeichern(Request $request, GeraeteListe $liste): RedirectResponse
     {
         $daten = $request->validate([
             'scope' => ['required', 'string', 'max:64'],
@@ -181,13 +191,20 @@ class DhcpController extends Controller
         ]);
         $this->pruefeImNetz($daten['scope'], $daten['ip']);
 
+        $bereich = DB::table(Dhcp::BEREICHE)->where('scope', $daten['scope'])->first();
+        $karte = $this->bereich($bereich, now(), $this->inventar($liste), GeraeteMeta::nachschlagen())['karte'] ?? [];
+        $eintrag = collect($karte)->firstWhere('ip', $daten['ip']);
+        if ($eintrag !== null && ! in_array($eintrag['belegung'], ['frei', 'manuell'], true)) {
+            return $this->zurueck($request, $daten['ip'].' wird automatisch erkannt ('.self::BELEGUNG_TEXT[$eintrag['belegung']].') – manuelles Belegen ist dort nicht nötig.');
+        }
+
         $vorher = DB::table(Dhcp::MANUELL)->where('scope', $daten['scope'])->where('ip', $daten['ip'])->first();
 
         DB::table(Dhcp::MANUELL)->updateOrInsert(
             ['scope' => $daten['scope'], 'ip' => $daten['ip']],
             [
                 'bezeichnung' => $daten['bezeichnung'],
-                'notiz' => $daten['notiz'] ?: null,
+                'notiz' => ($daten['notiz'] ?? null) ?: null,
                 'geaendert_von' => $request->user()?->id,
                 'updated_at' => now(),
                 'created_at' => $vorher->created_at ?? now(),
@@ -296,11 +313,11 @@ class DhcpController extends Controller
     /**
      * Ein Eintrag je Hostadresse des Netzes.
      *
-     * Belegung, wenn mehreres zutrifft: Reservierung vor Lease vor manuell vor
-     * antwortet. Eine manuelle Markierung auf einer Adresse, die der DHCP-Server
-     * selbst vergeben hat, bleibt sichtbar (Feld `manuell`) – das ist ein Konflikt.
-     * Antwortet ein manuell belegtes Gerät, ist das kein Konflikt, sondern die
-     * Bestätigung – die Belegung bleibt „manuell".
+     * Belegung, wenn mehreres zutrifft: Reservierung vor Lease vor antwortet vor
+     * manuell. Manuell belegen ist nur für Adressen gedacht, die nichts davon
+     * erkennt (siehe manuellSpeichern). Eine ältere manuelle Markierung bleibt
+     * sichtbar (Feld `manuell`): auf einer Lease/Reservierung ist sie ein
+     * Konflikt, bei einem antwortenden Gerät nur überflüssig.
      *
      * @return list<array<string, mixed>>|null  null, wenn das Netz zu groß ist
      */
@@ -345,8 +362,8 @@ class DhcpController extends Controller
             $belegung = match (true) {
                 $res !== null => 'reservierung',
                 $lease !== null => 'lease',
-                $man !== null => 'manuell',
                 $inv !== null && $inv->online => 'ping',
+                $man !== null => 'manuell',
                 default => 'frei',
             };
 

@@ -154,7 +154,7 @@
                                 @foreach ($x['karte'] as $k)
                                     @php
                                         $f = $fuellungVon($k);
-                                        $konflikt = $k['manuell'] && $k['belegung'] !== 'manuell';
+                                        $konflikt = $k['manuell'] && in_array($k['belegung'], ['lease', 'reservierung'], true);
                                         $titel = $k['ip'].' – '.$fuellung[$f][1].' · '.$grundText[$k['grund']];
                                         if ($k['manuell']) $titel .= "\n".$k['manuell']['bezeichnung'];
                                         if ($k['geraet']) $titel .= "\n".$k['geraet'];
@@ -167,7 +167,7 @@
                                             style="{{ $fuellung[$f][0] }};{{ $rahmen[(int) $k['pool']] }}{{ $konflikt ? ';box-shadow:0 0 0 2px #dc2626' : '' }}">{{ $k['letztes'] }}</button>
                                 @endforeach
                             </div>
-                            <p class="mt-2 text-xs text-gray-500" x-show="!wahl">Klick auf ein Kästchen zeigt die Details; dort lässt sich eine Adresse manuell belegen.</p>
+                            <p class="mt-2 text-xs text-gray-500" x-show="!wahl">Klick auf ein Kästchen zeigt die Details; eine Adresse, die automatisch nicht erkannt wird, lässt sich dort manuell belegen.</p>
 
                             <div x-show="wahl" style="display: none;" class="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
                                 <template x-if="wahl">
@@ -189,8 +189,11 @@
                                             <div x-show="wahl.beschreibung"><span class="text-gray-500">Beschreibung:</span> <span x-text="wahl.beschreibung"></span></div>
                                             <div x-show="wahl.seit"><span class="text-gray-500">Lease seit:</span> <span x-text="wahl.seit"></span></div>
                                             <div x-show="wahl.ablauf"><span class="text-gray-500">Lease bis:</span> <span x-text="wahl.ablauf"></span></div>
-                                            <div x-show="wahl.manuell && wahl.belegung !== 'manuell'" class="font-medium text-red-700">
+                                            <div x-show="wahl.manuell && (wahl.belegung === 'lease' || wahl.belegung === 'reservierung')" class="font-medium text-red-700">
                                                 Manuell belegt, aber der DHCP-Server hat die Adresse selbst vergeben – eine der beiden Angaben stimmt nicht.
+                                            </div>
+                                            <div x-show="wahl.manuell && wahl.belegung === 'ping'" class="font-medium" style="color:#b45309">
+                                                Manuell belegt, das Gerät antwortet aber inzwischen im Ping-Scan – der manuelle Eintrag ist überflüssig.
                                             </div>
                                             <a :href="'{{ request()->fullUrlWithQuery(['suche' => '__IP__', 'page' => null]) }}'.replace('__IP__', encodeURIComponent(wahl.ip)) + '#belegungen'"
                                                class="inline-block pt-1 text-indigo-700 hover:underline">Wer hatte diese Adresse?</a>
@@ -198,7 +201,12 @@
                                         </div>
 
                                         <div class="space-y-2">
-                                            <form method="POST" action="{{ route('module.netzwerk.dhcp.manuell') }}" class="space-y-2">
+                                            {{-- Manuell belegen nur, wenn automatisch nichts erkannt wird. --}}
+                                            <p x-show="wahl.belegung !== 'frei' && wahl.belegung !== 'manuell' && !wahl.manuell" class="text-sm text-gray-600">
+                                                Automatisch erkannt (<span x-text="wahl.text"></span>) – manuelles Belegen ist nicht nötig.
+                                            </p>
+                                            <form method="POST" action="{{ route('module.netzwerk.dhcp.manuell') }}" class="space-y-2"
+                                                  x-show="wahl.belegung === 'frei' || wahl.belegung === 'manuell'">
                                                 @csrf
                                                 <input type="hidden" name="scope" value="{{ $b->scope }}">
                                                 <input type="hidden" name="zeitraum" value="{{ $zeitraum }}">
