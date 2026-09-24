@@ -79,6 +79,33 @@ Collector. „online" berechnet das Modul beim Lesen aus `lastSeen` (Standard:
 15 Minuten, `NETZWERK_OFFLINE_AB_MINUTEN`), nicht aus gespeicherten Flags –
 fällt der Collector aus, zeigt die Übersicht ehrlich offline.
 
+## DHCP
+
+Seite *DHCP*: je DHCP-Bereich eine Adresskarte (jede IP des Netzes), der
+Verlauf der freien Adressen und die Liste „Wer hatte wann welche Adresse".
+
+- **Rahmen = Pool.** Durchgezogen: DHCP möglich (zwischen Start und Ende,
+  nicht ausgeschlossen). Gestrichelt: DHCP nicht möglich.
+- **Füllung = Belegung.** Reservierung, Lease, manuell belegt (im Intranet
+  gepflegt, für Geräte mit fester IP, die nicht antworten), antwortet (im
+  Ping-Scan online) oder frei. Vergibt der DHCP-Server eine manuell belegte
+  Adresse trotzdem, bekommt das Kästchen einen roten Ring.
+- Klick auf ein Kästchen zeigt Gerät, MAC, Hersteller, Ping-Stand und die
+  Pflege-Daten (Typ, Standort, Info) mit Link zum Bearbeiten.
+
+Die Daten liefert [scripts/dhcp-statistik.ps1](scripts/dhcp-statistik.ps1) auf
+einem Windows-DHCP-Server an den Webhook-Eingang der Plattform (Ekkon →
+Webhook-Eingang, eigene Quelle anlegen, URL übernehmen):
+
+```powershell
+.\dhcp-statistik.ps1 -Url https://<intranet>/webhooks/ekkon/<schluessel> -Einrichten
+```
+
+Das legt eine geplante Aufgabe an (alle 15 Minuten). Der Task `Netzwerk/Dhcp`
+übernimmt die Eingänge alle 5 Minuten in `netzwerk_dhcp_*`. Belegungen
+(Gerätename, MAC) sind personenbezogen und werden nach 90 Tagen gelöscht
+(Task-Einstellung).
+
 ## Ausbaustufen
 
 1. ✅ Geräte-Inventar

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Intranet\Modules\Netzwerk\Http\Controllers\DhcpController;
 use Intranet\Modules\Netzwerk\Http\Controllers\GeraetController;
 use Intranet\Modules\Netzwerk\Http\Controllers\GeraeteController;
 use Intranet\Modules\Netzwerk\Http\Controllers\KarteController;
@@ -31,6 +32,12 @@ Route::middleware(['web', 'auth'])
         Route::get('/', [KarteController::class, 'index'])->name('index');
         Route::get('/geraete', [GeraeteController::class, 'index'])->name('geraete');
         Route::get('/statistik', [StatistikController::class, 'index'])->name('statistik');
+
+        // DHCP: Adresskarte, Verlauf, Belegungen (Task Netzwerk/Dhcp). Unter dhcp.*
+        // benannt, damit die Aktionen die Rollen des Menüpunkts erben.
+        Route::get('/dhcp', [DhcpController::class, 'index'])->name('dhcp');
+        Route::post('/dhcp/manuell', [DhcpController::class, 'manuellSpeichern'])->name('dhcp.manuell');
+        Route::post('/dhcp/manuell/entfernen', [DhcpController::class, 'manuellEntfernen'])->name('dhcp.manuell.entfernen');
         Route::get('/knoten/{id}', [KnotenController::class, 'show'])->whereNumber('id')->name('knoten');
         // Ausblenden = gehört nicht dazu (z. B. LLDP-sprechender Virtualisierungs-Host):
         // weg von Karte und Alarm; mit einblenden=1 kommt er zurück (Liste auf der Karte).

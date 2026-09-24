@@ -25,6 +25,7 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
             ->item('index', 'Karte', 'module.netzwerk.index', icon: 'network')
             ->item('geraete', 'Geräte', 'module.netzwerk.geraete', icon: 'list')
             ->item('statistik', 'Statistik', 'module.netzwerk.statistik', icon: 'chart')
+            ->item('dhcp', 'DHCP', 'module.netzwerk.dhcp', icon: 'list')
             ->item('typen', 'Gerätetypen', 'module.netzwerk.typen', icon: 'category')
             ->item('standorte', 'Standorte', 'module.netzwerk.standorte', icon: 'door');
     }
@@ -55,6 +56,19 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
                 // „Netzwerk". Ältere Ekkon-Stände ignorieren das Argument.
                 'netzwerk',
             );
+        }
+    }
+
+    public function boot(): void
+    {
+        parent::boot();
+
+        // Klartext fürs Audit-Log des Cores (ältere Plattform-Stände haben keins).
+        if (class_exists(\App\Support\Audit::class) && method_exists(\App\Support\Audit::class, 'benennen')) {
+            \App\Support\Audit::benennen([
+                'dhcp.manuell' => 'DHCP: Adresse manuell belegt',
+                'dhcp.manuell_frei' => 'DHCP: manuelle Belegung aufgehoben',
+            ]);
         }
     }
 }
