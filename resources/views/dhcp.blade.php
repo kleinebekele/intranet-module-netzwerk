@@ -62,10 +62,17 @@
                                 @if ($b->server) · Server {{ $b->server }} @endif
                             </p>
                         </div>
-                        <p class="text-sm {{ $veraltet ? 'font-medium text-red-600' : 'text-gray-500' }}">
-                            Stand {{ $x['gemessen']?->format('d.m.Y H:i') ?? '–' }}
-                            @if ($veraltet) – seit über 45 Minuten keine neuen Werte @endif
-                        </p>
+                        <div class="flex flex-col items-end gap-2">
+                            <p class="text-sm {{ $veraltet ? 'font-medium text-red-600' : 'text-gray-500' }}">
+                                Stand {{ $x['gemessen']?->format('d.m.Y H:i') ?? '–' }}
+                                @if ($veraltet) – seit über 45 Minuten keine neuen Werte @endif
+                            </p>
+                            <a href="{{ route('module.netzwerk.dhcp.skript', ['scope' => $b->scope]) }}"
+                               title="PowerShell-Skript: ersetzt die Ausschluss-Bereiche durch einzelne IPs (gleiche Adressen, Pool unverändert) und listet die Bezeichnungen aus dem Intranet. Erst mit -Probelauf starten."
+                               class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                                Skript: Ausschlüsse als Einzel-IPs
+                            </a>
+                        </div>
                     </div>
 
                     @php $z = $x['zahlen']; @endphp

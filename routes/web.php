@@ -38,6 +38,7 @@ Route::middleware(['web', 'auth'])
         Route::get('/dhcp', [DhcpController::class, 'index'])->name('dhcp');
         Route::post('/dhcp/manuell', [DhcpController::class, 'manuellSpeichern'])->name('dhcp.manuell');
         Route::post('/dhcp/manuell/entfernen', [DhcpController::class, 'manuellEntfernen'])->name('dhcp.manuell.entfernen');
+        Route::get('/dhcp/ausschluesse-skript', [DhcpController::class, 'ausschluesseSkript'])->name('dhcp.skript');
         Route::get('/knoten/{id}', [KnotenController::class, 'show'])->whereNumber('id')->name('knoten');
         // Ausblenden = gehört nicht dazu (z. B. LLDP-sprechender Virtualisierungs-Host):
         // weg von Karte und Alarm; mit einblenden=1 kommt er zurück (Liste auf der Karte).

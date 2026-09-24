@@ -4,11 +4,13 @@ namespace Intranet\Modules\Netzwerk\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use Intranet\Modules\Netzwerk\Support\DhcpAusschluesseSkript;
 use Intranet\Modules\Netzwerk\Support\GeraeteListe;
 use Intranet\Modules\Netzwerk\Support\GeraeteMeta;
 use Intranet\Modules\Netzwerk\Tasks\Netzwerk\Dhcp;
@@ -53,16 +55,7 @@ class DhcpController extends Controller
 
         $ab = now()->subHours(self::ZEITRAEUME[$zeitraum][1]);
 
-        // Ping-Inventar je IP (mit Pflege-Daten) und Pflege-Nachschlagen für den Rest.
-        $inventar = [];
-        foreach ($liste->geraete()['segmente'] as $geraete) {
-            foreach ($geraete as $g) {
-                // Zwei Einträge mit derselben IP (Gerät gewechselt): der aktive gewinnt.
-                if (! isset($inventar[$g->ip]) || ($g->online && ! $inventar[$g->ip]->online)) {
-                    $inventar[$g->ip] = $g;
-                }
-            }
-        }
+        $inventar = $this->inventar($liste);
         $nachschlagen = GeraeteMeta::nachschlagen();
 
         $bereiche = [];
@@ -91,6 +84,90 @@ class DhcpController extends Controller
             'suche' => $suche,
             'belegungen' => $belegungen,
         ]);
+    }
+
+    /**
+     * PowerShell-Skript zum Download: ersetzt die Ausschluss-BEREICHE eines
+     * Scopes durch einzelne IPs – dieselben Adressen, nur einzeln, damit man
+     * sie in der DHCP-Konsole leichter von Hand pflegen kann. Der Pool ändert
+     * sich nicht.
+     *
+     * Ausschlüsse haben im Windows-DHCP kein Beschreibungsfeld; die
+     * Bezeichnung je IP (manuell, Reservierung, Inventar) gibt das Skript
+     * deshalb nur als Liste aus.
+     *
+     * Das Skript prüft zuerst, ob die Ausschlüsse auf dem Server noch dem Stand
+     * entsprechen, aus dem es erzeugt wurde, und bricht sonst ab. Vor dem Ändern
+     * sichert es den Scope (Export-DhcpServer). Schlägt das Anlegen der
+     * Einzel-IPs eines Bereichs fehl, stellt es diesen Bereich wieder her.
+     */
+    public function ausschluesseSkript(Request $request, GeraeteListe $liste): Response
+    {
+        $scope = (string) $request->query('scope');
+        $bereich = DB::table(Dhcp::BEREICHE)->where('scope', $scope)->first();
+        abort_if($bereich === null, 404);
+
+        $x = $this->bereich($bereich, now()->subDay(), $this->inventar($liste), GeraeteMeta::nachschlagen());
+        $ausschluesse = json_decode((string) $bereich->ausschluesse, true) ?: [];
+
+        $beschreibung = [];
+        foreach ($x['karte'] ?? [] as $k) {
+            if ($k['grund'] !== 'ausgeschlossen') {
+                continue;
+            }
+            $teile = array_filter([
+                $k['manuell']['bezeichnung'] ?? null,
+                $k['belegung'] === 'reservierung' ? 'Reservierung '.($k['geraet'] ?? '') : null,
+                $k['belegung'] !== 'reservierung' ? $k['geraet'] : null,
+                $k['typ'],
+                $k['info'],
+                $k['beschreibung'],
+            ]);
+            $beschreibung[$k['ip']] = implode(' · ', array_unique($teile)) ?: '(ohne Bezeichnung)';
+        }
+
+        // PowerShell-Literal in einfachen Anführungszeichen; typografische Quotes
+        // gelten dort ebenfalls als Begrenzer und werden deshalb auch verdoppelt.
+        $ps = fn (string $text) => "'".preg_replace("/(['\x{2018}\x{2019}\x{201A}\x{201B}])/u", '$1$1', str_replace(["\r", "\n"], ' ', $text))."'";
+
+        $skript = strtr(DhcpAusschluesseSkript::VORLAGE, [
+            '{{scope}}' => $ps($scope),
+            '{{kopf}}' => str_replace(['<#', '#>'], '', ($bereich->name ?: $scope).' ('.$scope.')'),
+            '{{stand}}' => $bereich->gemessen_am ? Carbon::parse($bereich->gemessen_am)->format('d.m.Y H:i') : '–',
+            '{{erzeugt}}' => now()->format('d.m.Y H:i'),
+            '{{anzahl}}' => (string) count($beschreibung),
+            '{{erwartet}}' => implode(",\n    ", array_map(fn ($a) => $ps($a['von'].'-'.$a['bis']), $ausschluesse)),
+            '{{beschreibung}}' => implode("\n", array_map(fn ($ip, $text) => '    '.$ps($ip).' = '.$ps($text), array_keys($beschreibung), $beschreibung)),
+        ]);
+
+        // UTF-8 mit BOM und CRLF: Windows PowerShell 5.1 liest sonst Umlaute falsch.
+        $inhalt = "\u{FEFF}".str_replace("\n", "\r\n", str_replace("\r\n", "\n", $skript));
+        $datei = 'dhcp-ausschluesse-einzeln-'.str_replace('.', '-', $scope).'.ps1';
+
+        return response($inhalt, 200, [
+            'Content-Type' => 'text/plain; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="'.$datei.'"',
+        ]);
+    }
+
+    /**
+     * Ping-Inventar je IP (mit Pflege-Daten). Zwei Einträge mit derselben IP
+     * (Gerät gewechselt): der aktive gewinnt.
+     *
+     * @return array<string, object>
+     */
+    private function inventar(GeraeteListe $liste): array
+    {
+        $inventar = [];
+        foreach ($liste->geraete()['segmente'] as $geraete) {
+            foreach ($geraete as $g) {
+                if (! isset($inventar[$g->ip]) || ($g->online && ! $inventar[$g->ip]->online)) {
+                    $inventar[$g->ip] = $g;
+                }
+            }
+        }
+
+        return $inventar;
     }
 
     /** Adresse von Hand als belegt markieren (oder Bezeichnung ändern). */

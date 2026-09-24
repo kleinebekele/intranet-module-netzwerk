@@ -92,6 +92,11 @@ Verlauf der freien Adressen und die Liste „Wer hatte wann welche Adresse".
   Adresse trotzdem, bekommt das Kästchen einen roten Ring.
 - Klick auf ein Kästchen zeigt Gerät, MAC, Hersteller, Ping-Stand und die
   Pflege-Daten (Typ, Standort, Info) mit Link zum Bearbeiten.
+- Knopf „Skript: Ausschlüsse als Einzel-IPs" erzeugt ein PowerShell-Skript,
+  das die Ausschluss-Bereiche durch einzelne IPs ersetzt (gleiche Adressen,
+  Pool unverändert; mit Probelauf, Sicherung, Abgleich und Gegenprobe) und die
+  Bezeichnungen aus dem Intranet auflistet – Ausschlüsse selbst haben im
+  Windows-DHCP kein Beschreibungsfeld.
 
 Die Daten liefert [scripts/dhcp-statistik.ps1](scripts/dhcp-statistik.ps1) auf
 einem Windows-DHCP-Server an den Webhook-Eingang der Plattform (Ekkon →
