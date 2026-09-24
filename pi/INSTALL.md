@@ -130,7 +130,9 @@ steht, bekommt `lastSeen` und seine aktuelle IP fortgeschrieben; unbekannte
 MACs werden als neue Geräte angelegt (nur in Netzen, die das Inventar schon
 kennt, `segment` = /24). Damit hält der Collector das Geräte-Inventar allein
 aktuell – `netscan.sh` ist nicht mehr nötig. Geräte, die nie über die Firewall
-sprechen, bleiben unsichtbar.
+sprechen, hält Phase 3 über die Switch-Tabellen (FDB) online: Steht ihre MAC
+dort, gilt das als Lebenszeichen (nur `lastSeen`, die IP bleibt). Ganz stumme
+Geräte (tiefer Standby) fallen nach der FDB-Alterung heraus.
 
 ## VLANs je Port
 

@@ -51,6 +51,26 @@ WHERE NULLIF(s.mac, '') IS NOT NULL
 GROUP BY LOWER(s.mac);
 GO
 
+-- Lebenszeichen aus den Switch-Tabellen: Eine MAC in der FDB hat in den
+-- letzten Minuten Verkehr gemacht (Alterung der Switches ~5 Min). Das erfasst
+-- Geräte, die nie über die Firewall sprechen und deshalb in deren ARP-Tabelle
+-- fehlen (Drucker, die nur mit Server und PCs im eigenen Netz reden). Die IP
+-- bleibt, wie sie ist – die FDB kennt nur MACs; eine neue IP trägt Phase 4
+-- nach, sobald das Gerät über die Firewall spricht.
+UPDATE d SET
+    d.lastSeen = SYSDATETIME(),
+    d.isOnline = 1
+FROM __SCHEMA__.network_devices d
+WHERE NULLIF(d.mac, '') IS NOT NULL
+  AND EXISTS (
+      SELECT 1 FROM __SCHEMA__.network_fdb_stage s
+      WHERE LOWER(s.mac) = LOWER(d.mac)
+      UNION ALL
+      SELECT 1 FROM __SCHEMA__.network_wlan_stage w
+      WHERE LOWER(w.mac) = LOWER(d.mac)
+  );
+GO
+
 TRUNCATE TABLE __SCHEMA__.network_fdb_stage;
 TRUNCATE TABLE __SCHEMA__.network_wlan_stage;
 GO
