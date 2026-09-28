@@ -4,6 +4,7 @@ namespace Intranet\Modules\Netzwerk;
 
 use App\Modules\Support\ModuleManifest;
 use App\Modules\Support\ModuleServiceProvider;
+use App\Modules\Support\Zugriffsstufe;
 
 /**
  * Anmelde-Klasse des Netzwerk-Moduls.
@@ -27,7 +28,9 @@ class NetzwerkServiceProvider extends ModuleServiceProvider
             ->item('statistik', 'Statistik', 'module.netzwerk.statistik', icon: 'chart')
             ->item('dhcp', 'DHCP', 'module.netzwerk.dhcp', icon: 'list')
             ->item('typen', 'Gerätetypen', 'module.netzwerk.typen', icon: 'category')
-            ->item('standorte', 'Standorte', 'module.netzwerk.standorte', icon: 'door');
+            ->item('standorte', 'Standorte', 'module.netzwerk.standorte', icon: 'door')
+            // Zugriffsstufen: löscht per POST (MODULES.md im Core, „Zugriffsstufen").
+            ->stufe(Zugriffsstufe::Verwalten, 'dhcp.manuell.entfernen');
     }
 
     public function register(): void
