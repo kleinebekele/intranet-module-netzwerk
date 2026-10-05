@@ -117,8 +117,8 @@
                     <div>
                         <div class="mb-2 flex items-center gap-4 text-sm">
                             <span class="font-medium text-gray-700">Verlauf laut DHCP-Server</span>
-                            <span class="inline-flex items-center gap-1"><span style="display:inline-block;width:1.25rem;height:3px;background:#059669"></span> frei</span>
-                            <span class="inline-flex items-center gap-1"><span style="display:inline-block;width:1.25rem;height:3px;background:#0284c7"></span> belegt</span>
+                            <span class="inline-flex items-center gap-1"><span style="display:inline-block;width:1.25rem;height:3px;background:var(--color-emerald-600, #059669)"></span> frei</span>
+                            <span class="inline-flex items-center gap-1"><span style="display:inline-block;width:1.25rem;height:3px;background:var(--color-sky-600, #0284c7)"></span> belegt</span>
                         </div>
                         @if (count($punkte) > 1)
                             <svg viewBox="0 0 {{ $w }} {{ $h }}" class="w-full h-56" preserveAspectRatio="none">
@@ -148,7 +148,7 @@
                                 @foreach ($fuellung as [$stil, $text])
                                     <span class="inline-flex items-center gap-1"><span class="inline-block h-3 w-3 rounded-sm border border-gray-300" style="{{ $stil }}"></span>{{ $text }}</span>
                                 @endforeach
-                                <span class="inline-flex items-center gap-1"><span class="inline-block h-3 w-3 rounded-sm bg-white" style="box-shadow:0 0 0 2px #dc2626"></span>Manuell belegt, aber vom DHCP vergeben</span>
+                                <span class="inline-flex items-center gap-1"><span class="inline-block h-3 w-3 rounded-sm bg-white" style="box-shadow:0 0 0 2px var(--color-red-600, #dc2626)"></span>Manuell belegt, aber vom DHCP vergeben</span>
                             </div>
                             <div class="grid gap-1" style="grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr));">
                                 @foreach ($x['karte'] as $k)
@@ -162,9 +162,9 @@
                                     @endphp
                                     <button type="button" @click="wahl = {{ \Illuminate\Support\Js::from($k + ['text' => $fuellung[$f][1], 'grundText' => $grundText[$k['grund']]]) }}"
                                             title="{{ $titel }}"
-                                            :style="wahl && wahl.ip === '{{ $k['ip'] }}' ? { outline: '2px solid #4f46e5', outlineOffset: '1px' } : {}"
+                                            :style="wahl && wahl.ip === '{{ $k['ip'] }}' ? { outline: '2px solid var(--color-indigo-600, #4f46e5)', outlineOffset: '1px' } : {}"
                                             class="rounded px-1 py-1 text-center font-mono text-xs"
-                                            style="{{ $fuellung[$f][0] }};{{ $rahmen[(int) $k['pool']] }}{{ $konflikt ? ';box-shadow:0 0 0 2px #dc2626' : '' }}">{{ $k['letztes'] }}</button>
+                                            style="{{ $fuellung[$f][0] }};{{ $rahmen[(int) $k['pool']] }}{{ $konflikt ? ';box-shadow:0 0 0 2px var(--color-red-600, #dc2626)' : '' }}">{{ $k['letztes'] }}</button>
                                 @endforeach
                             </div>
                             <p class="mt-2 text-xs text-gray-500" x-show="!wahl">Klick auf ein Kästchen zeigt die Details; eine Adresse, die automatisch nicht erkannt wird, lässt sich dort manuell belegen.</p>
@@ -192,7 +192,7 @@
                                             <div x-show="wahl.manuell && (wahl.belegung === 'lease' || wahl.belegung === 'reservierung')" class="font-medium text-red-700">
                                                 Manuell belegt, aber der DHCP-Server hat die Adresse selbst vergeben – eine der beiden Angaben stimmt nicht.
                                             </div>
-                                            <div x-show="wahl.manuell && wahl.belegung === 'ping'" class="font-medium" style="color:#b45309">
+                                            <div x-show="wahl.manuell && wahl.belegung === 'ping'" class="font-medium" style="color:var(--color-amber-700, #b45309)">
                                                 Manuell belegt, das Gerät antwortet aber inzwischen im Ping-Scan – der manuelle Eintrag ist überflüssig.
                                             </div>
                                             <a :href="'{{ request()->fullUrlWithQuery(['suche' => '__IP__', 'page' => null]) }}'.replace('__IP__', encodeURIComponent(wahl.ip)) + '#belegungen'"
@@ -284,7 +284,7 @@
                                         <td class="px-3 py-2">{{ $z->reserviert ? 'Reservierung' : 'Lease' }}</td>
                                         <td class="px-3 py-2 whitespace-nowrap">{{ $von->format('d.m.Y H:i') }}</td>
                                         <td class="px-3 py-2 whitespace-nowrap">
-                                            @if ($jetzt) <span class="rounded px-1.5 py-0.5 text-xs font-medium" style="background:#e0f2fe;color:#075985">jetzt</span> @else {{ $bis->format('d.m.Y H:i') }} @endif
+                                            @if ($jetzt) <span class="rounded px-1.5 py-0.5 text-xs font-medium" style="background:var(--color-sky-100, #e0f2fe);color:var(--color-sky-800, #075985)">jetzt</span> @else {{ $bis->format('d.m.Y H:i') }} @endif
                                         </td>
                                         <td class="px-3 py-2 whitespace-nowrap">{{ $von->equalTo($bis) ? '–' : $von->diffForHumans($bis, true) }}</td>
                                     </tr>

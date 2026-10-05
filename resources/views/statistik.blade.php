@@ -31,10 +31,10 @@
                     </select>
                 </label>
                 <span class="inline-flex items-center gap-1.5 text-gray-600">
-                    <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:#0284c7"></span> eingehend
+                    <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:var(--color-sky-600, #0284c7)"></span> eingehend
                 </span>
                 <span class="inline-flex items-center gap-1.5 text-gray-600">
-                    <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:#d97706"></span> ausgehend
+                    <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:var(--color-amber-600, #d97706)"></span> ausgehend
                 </span>
                 @if ($quelle === 'demo')
                     <span class="text-indigo-700 font-semibold">Demo-Daten (NETZWERK_DEMO) – nichts hiervon ist echt</span>
