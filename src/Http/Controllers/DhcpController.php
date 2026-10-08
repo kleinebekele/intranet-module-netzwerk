@@ -78,7 +78,7 @@ class DhcpController extends Controller
                     ->orWhere('mac', 'like', $muster)
                     ->orWhere('geraet', 'like', $muster));
             })
-            ->orderByDesc('zuletzt')
+            ->orderByDesc('erstmals')
             ->orderBy('ip')
             ->paginate(100)
             ->withQueryString();
