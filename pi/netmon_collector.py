@@ -982,9 +982,14 @@ def sammellauf(cfg, verbose):
             if not client.get("apIp"):
                 continue
             wlan_macs.add(client["mac"])
+            # ip ans Ende (Phase 6): freebcp lädt positionsweise, die Spalte
+            # hängt schema_phase6.sql hinten an network_wlan_stage an.
             wlan_csv.append([client["mac"], client["apIp"],
-                             client.get("apName", ""), client.get("ssid", "")])
-            if client.get("ip"):   # MAC<->IP der Clients kennt nur der Controller
+                             client.get("apName", ""), client.get("ssid", ""),
+                             client.get("ip", "")])
+            # MAC<->IP der Clients kennt nur der Controller. 169.254.x.x heißt
+            # "kein DHCP" und darf die echte Adresse im Inventar nicht überschreiben.
+            if client.get("ip") and not client["ip"].startswith("169.254."):
                 arp_csv.append([client["mac"], client["ip"], ""])
         if verbose:
             log(f"  WC7500: {len(aps)} APs, {len(clients)} Clients")
@@ -1179,7 +1184,7 @@ def main():
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
                  for name in ("schema_phase2.sql", "schema_phase3.sql",
                               "schema_phase4.sql", "schema_phase5.sql",
-                              "schema_vlan.sql"))
+                              "schema_vlan.sql", "schema_phase6.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
     if args.wlan_erkunden is not None:

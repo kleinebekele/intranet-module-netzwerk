@@ -171,6 +171,26 @@ bei jedem Lauf mit. Achtung Reihenfolge: `merge_phase2.sql` lässt die Stages
 seit Phase 5 bewusst stehen — aufgeräumt wird erst am Ende von
 `merge_phase5.sql`.
 
+## Phase 6: WLAN-Auswertung
+
+Die Client-Tabelle des WC7500 liefert je Client auch die IP. Seit Phase 6
+landet sie im Schnappschuss (`network_wlan_clients.ip`), und `merge_phase3.sql`
+führt zwei Verläufe (Aufbewahrung 60 Tage):
+
+- `network_wlan_wechsel` — ein Client steht im neuen Lauf an einem anderen AP
+  als im letzten (nur gegen einen höchstens 15 Minuten alten Schnappschuss).
+- `network_wlan_ohne_ip` — eingebucht mit 169.254.x.x (kein DHCP), eine Zeile
+  je ununterbrochenem Zeitraum.
+
+169.254-Adressen gehen bewusst nicht mehr in `network_arp_stage`, damit sie die
+echte Adresse eines Geräts im Inventar nicht überschreiben. Das Intranet zeigt
+beides unter Netzwerk → WLAN; der Task Netzwerk/Alarme meldet Geräte ohne
+Adresse (Meldungsart `netzwerk-wlan-ohne-adresse`).
+
+**Update:** Collector-Script und SQL-Dateien zusammen installieren, direkt
+danach `--init-db` (hängt die Spalte `ip` an Stage und Schnappschuss an und
+legt die Verlaufstabellen an).
+
 ## Fehlersuche
 
 - `FEHLER bei MERGE`/`freebcp` im Log → Zugangsdaten in `[mssql]` prüfen;

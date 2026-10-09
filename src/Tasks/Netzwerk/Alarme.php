@@ -35,13 +35,14 @@ class Alarme extends EkkonTask
 {
     public string $category = 'Netzwerk';
 
-    public string $description = 'Wacht über die Netzwerk-Infrastruktur: meldet Knoten, die nicht mehr antworten, Rückkehrer, neu entdeckte Geräte und Andrang in einem WLAN (z. B. Gäste).';
+    public string $description = 'Wacht über die Netzwerk-Infrastruktur: meldet Knoten, die nicht mehr antworten, Rückkehrer, neu entdeckte Geräte, Andrang in einem WLAN (z. B. Gäste) und WLAN-Geräte ohne Adresse (169.254).';
 
     public array $meldungsarten = [
         'netzwerk-knoten-offline' => 'Netzwerk: Gerät antwortet nicht mehr',
         'netzwerk-knoten-wieder-online' => 'Netzwerk: Gerät wieder erreichbar',
         'netzwerk-knoten-entdeckt' => 'Netzwerk: neues Gerät entdeckt, noch nicht eingebunden',
         'netzwerk-wlan-andrang' => 'Netzwerk: zu viele Geräte gleichzeitig in einem WLAN',
+        'netzwerk-wlan-ohne-adresse' => 'Netzwerk: WLAN-Gerät eingebucht, aber ohne Adresse (169.254)',
     ];
 
     public array $einstellungen = [
@@ -64,6 +65,12 @@ class Alarme extends EkkonTask
             'label' => 'Entwarnung melden',
             'standard' => true,
             'hilfe' => 'Meldet auch, wenn ein zuvor ausgefallener Knoten wieder erreichbar ist.',
+        ],
+        'ohne_adresse_minuten' => [
+            'typ' => 'zahl',
+            'label' => 'WLAN ohne Adresse melden ab (Minuten)',
+            'standard' => 10,
+            'hilfe' => 'Ein Gerät ist im WLAN eingebucht, hat aber nur 169.254.x.x (keine Antwort vom DHCP-Server). Gemeldet wird, wenn das mindestens so lange anhält. 0 = nicht melden.',
         ],
     ];
 
@@ -181,8 +188,9 @@ class Alarme extends EkkonTask
         }
 
         $andrang = $this->wlanAndrang($ohneZiel, $schwelle);
+        $ohneAdresse = $this->wlanOhneAdresse($ohneZiel);
 
-        $zaehler = ['offline' => count($offline), 'wieder_online' => count($wieder), 'entdeckt' => count($entdeckt), 'wlan_andrang' => $andrang];
+        $zaehler = ['offline' => count($offline), 'wieder_online' => count($wieder), 'entdeckt' => count($entdeckt), 'wlan_andrang' => $andrang, 'wlan_ohne_adresse' => $ohneAdresse];
 
         if ($baseline) {
             $this->msg('Erster Lauf: '.count($gesehen).' Knoten als Ausgangslage gemerkt — noch keine Meldungen.');
@@ -303,6 +311,75 @@ class Alarme extends EkkonTask
         }
 
         return $summe;
+    }
+
+    /**
+     * WLAN ohne Adresse: Geräte, die am AP eingebucht sind, aber seit
+     * mindestens N Minuten nur 169.254.x.x haben (kein DHCP). Quelle ist der
+     * Verlauf des Collectors (network_wlan_ohne_ip, eine Zeile je Zeitraum,
+     * zuletzt je Lauf fortgeschrieben). Jeder Zeitraum wird genau einmal
+     * gemeldet (Gedächtnis: netzwerk_alarm_zustand, Schlüssel = Zeilen-IDs).
+     *
+     * @return int Anzahl der gerade betroffenen Geräte
+     */
+    private function wlanOhneAdresse(array &$ohneZiel): int
+    {
+        $minuten = (int) $this->einstellung('ohne_adresse_minuten');
+        if ($minuten <= 0 || (bool) config('netzwerk.demo', false)) {
+            return 0;
+        }
+
+        $schema = Netzwerk::schema();
+        try {
+            // Offen = im letzten Lauf noch gesehen (Collector alle 5 Min.).
+            $offen = DB::connection(Netzwerk::connection())->select(
+                "SELECT o.id, o.mac, o.ip, o.ssid, o.ap_name, d.hostname,
+                        DATEDIFF(minute, o.erstmals, o.zuletzt) AS minuten
+                 FROM {$schema}.network_wlan_ohne_ip o
+                 LEFT JOIN (SELECT LOWER(mac) AS mac, MAX(NULLIF(hostname, '')) AS hostname
+                            FROM {$schema}.network_devices WHERE NULLIF(mac, '') IS NOT NULL GROUP BY LOWER(mac)) d
+                        ON d.mac = o.mac
+                 WHERE o.zuletzt >= DATEADD(minute, -10, SYSDATETIME())"
+            );
+        } catch (Throwable $e) {
+            $this->msg('WLAN ohne Adresse: Verlauf nicht lesbar (Collector-Update mit schema_phase6.sql + --init-db?): '.$e->getMessage());
+
+            return 0;
+        }
+
+        $schluessel = 'wlan-ohne-adresse';
+        $gemeldet = array_map('intval', (array) (AlarmZustand::lesen($schluessel)['gemeldet'] ?? []));
+        $offeneIds = array_map(fn ($z) => (int) $z->id, $offen);
+
+        $neu = array_values(array_filter($offen,
+            fn ($z) => (int) $z->minuten >= $minuten && ! in_array((int) $z->id, $gemeldet, true)));
+
+        if ($neu !== []) {
+            $geraete = array_map(function ($z) {
+                $name = trim((string) $z->hostname) ?: trim((string) $z->mac);
+
+                return [
+                    'anzeige' => $name,
+                    'id' => (int) $z->id,
+                    'zeile' => '🟠 '.$name.' ('.trim((string) $z->mac).')'
+                        .' — WLAN „'.(trim((string) $z->ssid) ?: '?').'" an '.(trim((string) $z->ap_name) ?: '?')
+                        .', '.trim((string) $z->ip).' seit '.(int) $z->minuten.' Minuten',
+                ];
+            }, $neu);
+            $n = count($geraete);
+            $this->sammelmeldung($ohneZiel, 'netzwerk-wlan-ohne-adresse',
+                '📵 '.$n.' WLAN-Gerät'.($n === 1 ? '' : 'e').' ohne Adresse',
+                'Folgende Geräte sind im WLAN eingebucht, bekommen aber keine Adresse vom DHCP-Server (169.254.x.x, Schwelle: '.$minuten." Minuten):\n\n"
+                .implode("\n", array_column($geraete, 'zeile'))
+                ."\n\nVerlauf und AP-Wechsel: Netzwerk → WLAN.",
+                $geraete, fn ($g) => (string) $g['id'], 'netzwerk-ohne-adresse-batch');
+            $gemeldet = array_merge($gemeldet, array_column($geraete, 'id'));
+        }
+
+        // Nur offene Zeiträume merken – abgeschlossene kommen nie wieder.
+        AlarmZustand::schreiben($schluessel, ['gemeldet' => array_values(array_intersect($gemeldet, $offeneIds))]);
+
+        return count($offen);
     }
 
     /**

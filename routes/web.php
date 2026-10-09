@@ -9,6 +9,7 @@ use Intranet\Modules\Netzwerk\Http\Controllers\KnotenController;
 use Intranet\Modules\Netzwerk\Http\Controllers\StandorteController;
 use Intranet\Modules\Netzwerk\Http\Controllers\StatistikController;
 use Intranet\Modules\Netzwerk\Http\Controllers\TypenController;
+use Intranet\Modules\Netzwerk\Http\Controllers\WlanController;
 use Intranet\Modules\Netzwerk\Http\Controllers\WlanGruppenController;
 
 /*
@@ -32,6 +33,8 @@ Route::middleware(['web', 'auth'])
         Route::get('/', [KarteController::class, 'index'])->name('index');
         Route::get('/geraete', [GeraeteController::class, 'index'])->name('geraete');
         Route::get('/statistik', [StatistikController::class, 'index'])->name('statistik');
+        // WLAN-Auswertung: Clients ohne Adresse (169.254) + AP-Wechsel-Rangliste.
+        Route::get('/wlan', [WlanController::class, 'index'])->name('wlan');
 
         // DHCP: Adresskarte, Verlauf, Belegungen (Task Netzwerk/Dhcp). Unter dhcp.*
         // benannt, damit die Aktionen die Rollen des Menüpunkts erben.

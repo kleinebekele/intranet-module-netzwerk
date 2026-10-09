@@ -40,12 +40,68 @@ JOIN __SCHEMA__.network_nodes n
 WHERE NULLIF(s.mac, '') IS NOT NULL;
 GO
 
+-- Phase 6, AP-Wechsel: Steht ein Client jetzt an einem anderen AP als im
+-- letzten Schnappschuss? Nur gegen einen frischen Schnappschuss vergleichen —
+-- nach einer Collector-Pause wäre der „Wechsel" Stunden alt.
+INSERT INTO __SCHEMA__.network_wlan_wechsel (mac, ssid, von_ap_ip, von_ap_name, nach_ap_ip, nach_ap_name, am)
+SELECT n.mac, n.ssid, a.ap_ip, a.ap_name, n.ap_ip, n.ap_name, SYSDATETIME()
+FROM (
+    SELECT LOWER(s.mac) AS mac, MAX(NULLIF(s.ap_ip, '')) AS ap_ip,
+           MAX(NULLIF(s.ap_name, '')) AS ap_name, MAX(NULLIF(s.ssid, '')) AS ssid
+    FROM __SCHEMA__.network_wlan_stage s
+    WHERE NULLIF(s.mac, '') IS NOT NULL
+    GROUP BY LOWER(s.mac)
+) n
+JOIN __SCHEMA__.network_wlan_clients a ON a.mac = n.mac
+WHERE a.ap_ip IS NOT NULL AND n.ap_ip IS NOT NULL AND a.ap_ip <> n.ap_ip
+  AND a.gesehen_am >= DATEADD(minute, -15, SYSDATETIME());
+GO
+
+-- Phase 6, ohne Adresse: eingebuchte Clients mit 169.254.x.x. Ein offener
+-- Zeitraum (zuletzt vor höchstens 15 Minuten) wird fortgeschrieben, sonst
+-- beginnt ein neuer.
+UPDATE o SET
+    o.zuletzt = SYSDATETIME(),
+    o.ip      = n.ip,
+    o.ssid    = n.ssid,
+    o.ap_ip   = n.ap_ip,
+    o.ap_name = n.ap_name
+FROM __SCHEMA__.network_wlan_ohne_ip o
+JOIN (
+    SELECT LOWER(s.mac) AS mac, MAX(NULLIF(s.ip, '')) AS ip, MAX(NULLIF(s.ap_ip, '')) AS ap_ip,
+           MAX(NULLIF(s.ap_name, '')) AS ap_name, MAX(NULLIF(s.ssid, '')) AS ssid
+    FROM __SCHEMA__.network_wlan_stage s
+    WHERE NULLIF(s.mac, '') IS NOT NULL AND s.ip LIKE '169.254.%'
+    GROUP BY LOWER(s.mac)
+) n ON n.mac = o.mac
+WHERE o.zuletzt >= DATEADD(minute, -15, SYSDATETIME());
+
+INSERT INTO __SCHEMA__.network_wlan_ohne_ip (mac, ip, ssid, ap_ip, ap_name, erstmals, zuletzt)
+SELECT n.mac, n.ip, n.ssid, n.ap_ip, n.ap_name, SYSDATETIME(), SYSDATETIME()
+FROM (
+    SELECT LOWER(s.mac) AS mac, MAX(NULLIF(s.ip, '')) AS ip, MAX(NULLIF(s.ap_ip, '')) AS ap_ip,
+           MAX(NULLIF(s.ap_name, '')) AS ap_name, MAX(NULLIF(s.ssid, '')) AS ssid
+    FROM __SCHEMA__.network_wlan_stage s
+    WHERE NULLIF(s.mac, '') IS NOT NULL AND s.ip LIKE '169.254.%'
+    GROUP BY LOWER(s.mac)
+) n
+WHERE NOT EXISTS (
+    SELECT 1 FROM __SCHEMA__.network_wlan_ohne_ip o
+    WHERE o.mac = n.mac AND o.zuletzt >= DATEADD(minute, -15, SYSDATETIME())
+);
+GO
+
+-- Aufbewahrung beider Verläufe: 60 Tage.
+DELETE FROM __SCHEMA__.network_wlan_wechsel WHERE am < DATEADD(day, -60, SYSDATETIME());
+DELETE FROM __SCHEMA__.network_wlan_ohne_ip WHERE zuletzt < DATEADD(day, -60, SYSDATETIME());
+GO
+
 -- Schnappschuss der eingebuchten Clients (Grundlage für den Andrang-Alarm
 -- des Moduls): je Lauf komplett ersetzt, doppelte MACs auf eine Zeile.
 DELETE FROM __SCHEMA__.network_wlan_clients;
-INSERT INTO __SCHEMA__.network_wlan_clients (mac, ap_ip, ap_name, ssid, gesehen_am)
+INSERT INTO __SCHEMA__.network_wlan_clients (mac, ap_ip, ap_name, ssid, ip, gesehen_am)
 SELECT LOWER(s.mac), MAX(NULLIF(s.ap_ip, '')), MAX(NULLIF(s.ap_name, '')),
-       MAX(NULLIF(s.ssid, '')), SYSDATETIME()
+       MAX(NULLIF(s.ssid, '')), MAX(NULLIF(s.ip, '')), SYSDATETIME()
 FROM __SCHEMA__.network_wlan_stage s
 WHERE NULLIF(s.mac, '') IS NOT NULL
 GROUP BY LOWER(s.mac);
