@@ -76,10 +76,13 @@ class WlanDaten
             ));
 
             $rangliste = $db->select(sprintf(
+                // IP = aktuelle Adresse aus dem letzten Schnappschuss (mac ist
+                // dort Primärschlüssel, der Join vervielfacht nichts).
                 "SELECT TOP %d w.mac, COUNT(*) AS anzahl, MAX(w.ssid) AS ssid, MAX(d.hostname) AS hostname,
-                        CONVERT(varchar(19), MAX(w.am), 120) AS zuletzt
+                        MAX(c.ip) AS ip, CONVERT(varchar(19), MAX(w.am), 120) AS zuletzt
                  FROM {$schema}.network_wlan_wechsel w
                  LEFT JOIN {$namen} d ON d.mac = w.mac
+                 LEFT JOIN {$schema}.network_wlan_clients c ON c.mac = w.mac
                  WHERE w.am >= DATEADD(hour, -%d, SYSDATETIME())
                  GROUP BY w.mac
                  ORDER BY COUNT(*) DESC, w.mac",
@@ -176,11 +179,11 @@ class WlanDaten
                 $o($handy + ['ip' => '169.254.56.78', 'ssid' => 'Gast-5G', 'ap_name' => 'AP-Raum-12', 'erstmals' => $vor(300), 'zuletzt' => $vor(295), 'minuten' => 5]),
             ],
             'rangliste' => [
-                $o($laptop + ['anzahl' => 23, 'ssid' => 'Buero-2G', 'zuletzt' => $vor(5), 'paare' => [
+                $o($laptop + ['anzahl' => 23, 'ip' => '192.168.0.52', 'ssid' => 'Buero-2G', 'zuletzt' => $vor(5), 'paare' => [
                     ['a' => 'AP-OG-Flur', 'b' => 'AP-Buero', 'anzahl' => 22],
                     ['a' => 'AP-EG-Flur', 'b' => 'AP-Buero', 'anzahl' => 1],
                 ]]),
-                $o($handy + ['anzahl' => 4, 'ssid' => 'Gast-5G', 'zuletzt' => $vor(290), 'paare' => [
+                $o($handy + ['anzahl' => 4, 'ip' => null, 'ssid' => 'Gast-5G', 'zuletzt' => $vor(290), 'paare' => [
                     ['a' => 'AP-Raum-12', 'b' => 'AP-OG-Flur', 'anzahl' => 2],
                     ['a' => 'AP-OG-Flur', 'b' => 'AP-Buero', 'anzahl' => 2],
                 ]]),

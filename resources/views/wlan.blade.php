@@ -128,6 +128,7 @@
                                 <tr>
                                     <th class="px-3 py-2">Gerät</th>
                                     <th class="px-3 py-2">MAC</th>
+                                    <th class="px-3 py-2" title="Aktuelle Adresse aus dem letzten Collector-Lauf; „–" = gerade nicht eingebucht">IP (jetzt)</th>
                                     <th class="px-3 py-2">WLAN</th>
                                     <th class="px-3 py-2 text-right">Wechsel</th>
                                     <th class="px-3 py-2">zwischen</th>
@@ -139,6 +140,13 @@
                                     <tr class="align-top">
                                         <td class="px-3 py-2">{{ $z->hostname ?? '–' }}</td>
                                         <td class="px-3 py-2 font-mono text-xs">{{ $z->mac }}</td>
+                                        <td class="px-3 py-2 font-mono text-xs">
+                                            @if ($z->ip !== null && str_starts_with($z->ip, '169.254.'))
+                                                <span class="rounded px-1.5 py-0.5" style="{{ $warnung }}">{{ $z->ip }}</span>
+                                            @else
+                                                {{ $z->ip ?? '–' }}
+                                            @endif
+                                        </td>
                                         <td class="px-3 py-2">{{ $z->ssid ?? '–' }}</td>
                                         <td class="px-3 py-2 text-right font-medium">{{ $z->anzahl }}</td>
                                         <td class="px-3 py-2">
