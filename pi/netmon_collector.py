@@ -18,15 +18,22 @@ Aufrufe:
 """
 
 import argparse
+import atexit
 import base64
+import collections
 import configparser
 import json
 import os
 import re
+import shutil
+import signal
 import socket
 import ssl
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -97,6 +104,91 @@ def log(text):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S} {text}", flush=True)
 
 
+# ------------------------------------------- SNMP-Zugang ohne argv ----------
+# Passphrasen/Communities gehören nicht in die Kommandozeile (per `ps` bzw.
+# /proc/<pid>/cmdline für jeden lokalen Benutzer lesbar). net-snmp liest sie
+# stattdessen aus einer snmp.conf in dem Verzeichnis, auf das SNMPCONFPATH
+# zeigt — ist die Variable gesetzt, ignoriert net-snmp ALLE anderen
+# Konfigurationspfade (auch ~/.snmp/snmp.conf). Je unterschiedlichem
+# Zugangsdatensatz ein eigenes Unterverzeichnis, alles unter einem privaten
+# Temp-Verzeichnis (0700), Dateien 0600; aufgeräumt per atexit.
+SnmpZugang = collections.namedtuple("SnmpZugang", "argumente umgebung")
+
+SNMP_TEMP_PRAEFIX = "netmon-snmp-"
+_snmp_temp = {"basis": None, "verzeichnisse": {}}
+
+
+def snmp_conf_text(wert):
+    """Freitext-Wert (Passphrase, Community, Benutzer) für snmp.conf: immer in
+    Anführungszeichen, Backslash und " maskiert — net-snmp (copy_nword) liest
+    ihn dann wörtlich, auch mit Leer- und Sonderzeichen."""
+    if any(z in wert for z in "\r\n\0"):
+        raise ValueError("SNMP-Zugangsdaten dürfen keinen Zeilenumbruch enthalten")
+    return '"' + wert.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def snmp_conf_wort(wert):
+    """Schlüsselwort wie SHA-512/AES — nur Buchstaben, Ziffern, Bindestrich."""
+    if not re.fullmatch(r"[A-Za-z0-9-]+", wert):
+        raise ValueError(f"Ungültiges SNMP-Protokoll: {wert!r}")
+    return wert
+
+
+def snmp_temp_aufraeumen():
+    """Privates Temp-Verzeichnis samt allen snmp.conf-Dateien löschen."""
+    basis = _snmp_temp["basis"]
+    _snmp_temp["basis"] = None
+    _snmp_temp["verzeichnisse"].clear()
+    if basis:
+        shutil.rmtree(basis, ignore_errors=True)
+
+
+def snmp_temp_reste_entfernen(max_alter_s=6 * 3600):
+    """Verwaiste Temp-Verzeichnisse früherer, hart abgebrochener Läufe
+    (SIGKILL, Stromausfall — da greift kein atexit) wegräumen. Nur eigene
+    und nur ältere als max_alter_s, damit ein parallel laufender Lauf seine
+    Dateien behält."""
+    tmp = tempfile.gettempdir()
+    jetzt = time.time()
+    try:
+        namen = os.listdir(tmp)
+    except OSError:
+        return
+    for name in namen:
+        if not name.startswith(SNMP_TEMP_PRAEFIX):
+            continue
+        pfad = os.path.join(tmp, name)
+        try:
+            st = os.lstat(pfad)
+        except OSError:
+            continue
+        if (stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+                and jetzt - st.st_mtime > max_alter_s):
+            shutil.rmtree(pfad, ignore_errors=True)
+
+
+def snmp_conf_verzeichnis(direktiven):
+    """Verzeichnis mit einer snmp.conf für genau diesen Zugangsdatensatz —
+    je Lauf und Datensatz nur einmal geschrieben, danach wiederverwendet."""
+    schluessel = tuple(direktiven)
+    verzeichnisse = _snmp_temp["verzeichnisse"]
+    if schluessel in verzeichnisse:
+        return verzeichnisse[schluessel]
+    if _snmp_temp["basis"] is None:
+        _snmp_temp["basis"] = tempfile.mkdtemp(prefix=SNMP_TEMP_PRAEFIX)  # 0700
+        atexit.register(snmp_temp_aufraeumen)
+    pfad = os.path.join(_snmp_temp["basis"], str(len(verzeichnisse)))
+    os.mkdir(pfad, 0o700)
+    fd = os.open(os.path.join(pfad, "snmp.conf"),
+                 os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("# Temporär vom netmon-Collector, wird am Laufende gelöscht.\n")
+        for name, wert in direktiven:
+            f.write(f"{name} {wert}\n")
+    verzeichnisse[schluessel] = pfad
+    return pfad
+
+
 class Config:
     """netmon.conf einlesen und SNMP-Argumente je Host bauen."""
 
@@ -108,15 +200,21 @@ class Config:
             if pflicht not in self.ini:
                 sys.exit(f"FEHLER: Abschnitt [{pflicht}] fehlt in {pfad}.")
 
-    def snmp_argumente(self, ip):
-        """Kommandozeilen-Argumente für snmpget/snmpbulkwalk gegen diese IP —
+    def snmp_zugang(self, ip):
+        """SNMP-Zugang für snmpget/snmpbulkwalk gegen diese IP —
         Standardwerte aus [snmp], überschrieben durch einen etwaigen
         Ausnahme-Abschnitt [snmp:IP] (z. B. der S3300 mit SHA-512/AES).
 
         Mit `version = 2c` + `community = …` im Ausnahme-Abschnitt wird das
         Gerät stattdessen per SNMPv2c abgefragt — für Geräte, die kein
         brauchbares v3 können (ältere Smart-Switches, WC7500). Niemals die
-        Admin-Kopplung solcher Geräte nutzen!"""
+        Admin-Kopplung solcher Geräte nutzen!
+
+        Zugangsdaten (Version, Benutzer, Protokolle, Passphrasen bzw.
+        Community) stehen NICHT in der Kommandozeile — die wäre per `ps` für
+        jeden lokalen Benutzer lesbar —, sondern in einer temporären
+        snmp.conf, auf die SNMPCONFPATH zeigt (siehe snmp_conf_verzeichnis).
+        In argv bleiben nur Timeout, Wiederholungen und -On."""
         werte = dict(self.ini["snmp"])
         ausnahme = f"snmp:{ip}"
         if ausnahme in self.ini:
@@ -124,13 +222,22 @@ class Config:
         allgemein = ["-t", werte.get("timeout", "2"),
                      "-r", werte.get("retries", "1"), "-On"]
         if werte.get("version", "3") == "2c":
-            return ["-v2c", "-c", werte["community"]] + allgemein
-        return [
-            "-v3", "-l", "authPriv",
-            "-u", werte["user"],
-            "-a", werte["auth_protocol"], "-A", werte["auth_password"],
-            "-x", werte["priv_protocol"], "-X", werte["priv_password"],
-        ] + allgemein
+            direktiven = (
+                ("defVersion", "2c"),
+                ("defCommunity", snmp_conf_text(werte["community"])),
+            )
+        else:
+            direktiven = (
+                ("defVersion", "3"),
+                ("defSecurityLevel", "authPriv"),
+                ("defSecurityName", snmp_conf_text(werte["user"])),
+                ("defAuthType", snmp_conf_wort(werte["auth_protocol"])),
+                ("defAuthPassphrase", snmp_conf_text(werte["auth_password"])),
+                ("defPrivType", snmp_conf_wort(werte["priv_protocol"])),
+                ("defPrivPassphrase", snmp_conf_text(werte["priv_password"])),
+            )
+        umgebung = dict(os.environ, SNMPCONFPATH=snmp_conf_verzeichnis(direktiven))
+        return SnmpZugang(allgemein, umgebung)
 
     @property
     def seed_ips(self):
@@ -172,11 +279,14 @@ ZEILE_MIT_TYP = re.compile(r'^(\.[0-9.]+) = ([A-Za-z0-9-]+): ?(.*)$', re.S)
 ZEILE_OHNE_TYP = re.compile(r'^(\.[0-9.]+) = "(.*)"$', re.S)  # leere Strings
 
 
-def snmp_abfrage(kommando, argumente, ip, oids, verbose=False):
+def snmp_abfrage(kommando, zugang, ip, oids, verbose=False):
     """snmpget/snmpbulkwalk ausführen und Ausgabe in (oid, typ, wert)-Tripel
-    zerlegen. Liefert None, wenn der Host nicht (korrekt) antwortet."""
-    cmd = [kommando] + argumente + [ip] + oids
-    lauf = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    zerlegen. Liefert None, wenn der Host nicht (korrekt) antwortet.
+    `zugang` aus Config.snmp_zugang (argv ohne Geheimnisse + Umgebung mit
+    SNMPCONFPATH)."""
+    cmd = [kommando] + zugang.argumente + [ip] + oids
+    lauf = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                          env=zugang.umgebung)
     if lauf.returncode != 0:
         if verbose:
             log(f"  {ip}: {kommando} fehlgeschlagen ({lauf.stderr.strip().splitlines()[:1]})")
@@ -236,7 +346,7 @@ def vlan_bitmap_ports(oktetten):
     return ports
 
 
-def vlan_mitglieder(argumente, ip, verbose):
+def vlan_mitglieder(zugang, ip, verbose):
     """VLAN-ID -> {"egress": Bridge-Ports, "untagged": Bridge-Ports} aus der
     Q-BRIDGE. Erst die statische Tabelle (= Konfiguration, Index die VLAN-ID),
     liefert die nichts, die Current-Tabelle (Index <TimeMark>.<VLAN>) — beide
@@ -245,7 +355,7 @@ def vlan_mitglieder(argumente, ip, verbose):
     for basis, egress_spalte, untagged_spalte in ((OID["vlanStatic"], 2, 4),
                                                   (OID["vlanCurrent"], 4, 5)):
         vlans = {}
-        for oid, typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [basis], verbose) or []:
+        for oid, typ, roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [basis], verbose) or []:
             rest = oid[len(basis) + 1:].split(".")
             if len(rest) < 2 or not rest[0].isdigit() or not rest[-1].isdigit():
                 continue
@@ -263,9 +373,9 @@ def vlan_mitglieder(argumente, ip, verbose):
 # ------------------------------------------------------- Node abfragen ------
 def node_abfragen(cfg, ip, verbose):
     """Einen Switch komplett einsammeln. None = keine Antwort."""
-    argumente = cfg.snmp_argumente(ip)
+    zugang = cfg.snmp_zugang(ip)
 
-    system = snmp_abfrage("snmpget", argumente, ip,
+    system = snmp_abfrage("snmpget", zugang, ip,
                           [OID["sysDescr"], OID["sysName"], OID["sysLocation"],
                            OID["lldpLocChassisSubtype"], OID["lldpLocChassisId"]],
                           verbose)
@@ -294,7 +404,7 @@ def node_abfragen(cfg, ip, verbose):
     # ---- Ports: ifTable + ifXTable in zwei Walks
     interfaces = {}
     for tabelle in (OID["ifTable"], OID["ifXTable"]):
-        zeilen = snmp_abfrage("snmpbulkwalk", argumente, ip, [tabelle], verbose)
+        zeilen = snmp_abfrage("snmpbulkwalk", zugang, ip, [tabelle], verbose)
         for oid, typ, roh in zeilen or []:
             praefix, _, index = oid.rpartition(".")
             feld = IF_SPALTEN.get(praefix)
@@ -332,7 +442,7 @@ def node_abfragen(cfg, ip, verbose):
         }
 
     # ---- Namen der lokalen Ports (für die Kanten-Beschriftung)
-    for oid, typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["lldpLocPortId"]], verbose) or []:
+    for oid, typ, roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["lldpLocPortId"]], verbose) or []:
         nummer = oid.rpartition(".")[2]
         if nummer.isdigit():
             node["lokalePorts"][int(nummer)] = wert_text(typ, roh)
@@ -340,7 +450,7 @@ def node_abfragen(cfg, ip, verbose):
     # ---- LLDP-Nachbarn: ganze Tabelle in einem Walk, Spalten aufdröseln.
     #      Index je Zeile: <spalte>.<timeMark>.<lokalerPort>.<laufNr>
     nachbarn = {}
-    for oid, typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["lldpRemTable"]], verbose) or []:
+    for oid, typ, roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["lldpRemTable"]], verbose) or []:
         rest = oid[len(OID["lldpRemTable"]) + 1:].split(".")
         if len(rest) != 4:
             continue
@@ -358,7 +468,7 @@ def node_abfragen(cfg, ip, verbose):
 
     # Management-IPs der Nachbarn stecken im Index der ManAddr-Tabelle:
     # ...<timeMark>.<lokalerPort>.<laufNr>.1.4.<a>.<b>.<c>.<d>
-    for oid, _typ, _roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["lldpRemManAddr"]], verbose) or []:
+    for oid, _typ, _roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["lldpRemManAddr"]], verbose) or []:
         rest = oid[len(OID["lldpRemManAddr"]) + 1:].split(".")
         if len(rest) == 9 and rest[3] == "1" and rest[4] == "4":
             schluessel = (int(rest[1]), int(rest[2]))
@@ -372,16 +482,16 @@ def node_abfragen(cfg, ip, verbose):
     #      ifIndex liefert dot1dBasePortIfIndex. CPU-Ports (z. B. 10000 bei
     #      Netgear) fehlen in der Übersetzung und fallen so von selbst raus.
     base_zu_if = {}
-    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["basePortIfIndex"]], verbose) or []:
+    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["basePortIfIndex"]], verbose) or []:
         nummer = oid.rpartition(".")[2]
         if nummer.isdigit():
             base_zu_if[int(nummer)] = wert_zahl(roh)
 
     fdb = {}  # ifIndex -> set der dort gelernten MACs
-    fdb_zeilen = snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPort"]], verbose)
+    fdb_zeilen = snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["fdbPort"]], verbose)
     fdb_praefix, index_laenge = OID["fdbPort"], 7   # <fdbId/VLAN>.<6 MAC-Oktetten>
     if not fdb_zeilen:
-        fdb_zeilen = snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["fdbPortAlt"]], verbose)
+        fdb_zeilen = snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["fdbPortAlt"]], verbose)
         fdb_praefix, index_laenge = OID["fdbPortAlt"], 6   # nur <6 MAC-Oktetten>
     for oid, _typ, roh in fdb_zeilen or []:
         rest = oid[len(fdb_praefix) + 1:].split(".")
@@ -399,13 +509,13 @@ def node_abfragen(cfg, ip, verbose):
     #      Untagged-Maske (oder das ganze Q-BRIDGE), bleibt als bester Wert
     #      der PVID — das untagged Ingress-VLAN des Ports.
     pvid_je_if = {}
-    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", argumente, ip, [OID["pvid"]], verbose) or []:
+    for oid, _typ, roh in snmp_abfrage("snmpbulkwalk", zugang, ip, [OID["pvid"]], verbose) or []:
         nummer = oid.rpartition(".")[2]
         if nummer.isdigit() and base_zu_if.get(int(nummer)) is not None:
             pvid_je_if[base_zu_if[int(nummer)]] = wert_zahl(roh)
 
     untagged_je_if, tagged_je_if = {}, {}
-    for vlan_id, m in vlan_mitglieder(argumente, ip, verbose).items():
+    for vlan_id, m in vlan_mitglieder(zugang, ip, verbose).items():
         for basisport in m["egress"]:
             if_index = base_zu_if.get(basisport)
             if if_index is None:    # CPU-Port o. ä.
@@ -468,7 +578,7 @@ def wlan_tabelle(cfg, ip, name, verbose):
     """Eine WC7500-Tabelle einlesen: Liste von Dicts, je Zeile die MAC aus
     dem Index plus die interessanten Spalten."""
     basis, spalten = WLAN_TABELLEN[name]
-    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_argumente(ip), ip, [basis], verbose)
+    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_zugang(ip), ip, [basis], verbose)
     eintraege = {}
     for oid, typ, roh in zeilen or []:
         rest = oid[len(basis) + 1:].split(".")
@@ -618,13 +728,30 @@ def csv_schreiben(pfad, zeilen):
             f.write("|".join(csv_feld(feld) for feld in zeile) + "\n")
 
 
+def mssql_passwort_zeile(cfg):
+    """Passwort als erste stdin-Zeile für tsql/freebcp (`-P -`).
+
+    FreeTDS (tds_getpassarg, ab 1.1; Debian 12 hat 1.3.17) liest bei `-P -`
+    die erste Zeile von stdin als Passwort — so taucht es nie in argv auf.
+    (Mit `-P <passwort>` überschreibt FreeTDS argv zwar nachträglich mit
+    Sternchen, bis dahin ist es aber kurz per `ps` sichtbar.) Eine
+    Umgebungsvariable fürs Passwort kennt FreeTDS nicht. Grenze: max. 254
+    Zeichen, kein Zeilenumbruch."""
+    passwort = cfg.mssql["password"]
+    if any(z in passwort for z in "\r\n\0") or len(passwort) > 254:
+        raise ValueError("[mssql] password: kein Zeilenumbruch, max. 254 Zeichen")
+    return passwort + "\n"
+
+
 def tsql_ausfuehren(cfg, sql, beschreibung):
     m = cfg.mssql
     umgebung = dict(os.environ, TDSPORT=m.get("port", "1433"))
+    # Passwort als erste stdin-Zeile, danach dieselbe Eingabe wie bisher —
+    # tsql liest beides aus demselben stdin-Puffer.
     lauf = subprocess.run(
         ["tsql", "-H", m["server"], "-p", m.get("port", "1433"),
-         "-U", m["user"], "-P", m["password"]],
-        input=sql + "\nGO\nexit\n",
+         "-U", m["user"], "-P", "-"],
+        input=mssql_passwort_zeile(cfg) + sql + "\nGO\nexit\n",
         capture_output=True, text=True, timeout=300, env=umgebung)
     fehler = [z for z in (lauf.stdout + lauf.stderr).splitlines()
               if "Msg " in z or "Error" in z]
@@ -642,8 +769,9 @@ def freebcp_hochladen(cfg, tabelle, csv_pfad):
     umgebung = dict(os.environ, TDSPORT=m.get("port", "1433"))
     lauf = subprocess.run(
         ["freebcp", ziel, "in", csv_pfad,
-         "-S", m["server"], "-U", m["user"], "-P", m["password"],
+         "-S", m["server"], "-U", m["user"], "-P", "-",
          "-c", "-t", "|"],
+        input=mssql_passwort_zeile(cfg),  # Daten aus csv_pfad, stdin nur fürs Passwort
         capture_output=True, text=True, timeout=300, env=umgebung)
     if lauf.returncode != 0:
         log(f"FEHLER: freebcp nach {ziel}: {lauf.stderr.strip()}")
@@ -757,7 +885,7 @@ def sammellauf(cfg, verbose):
     #    netmon-Zugang inzwischen, werden sie aktiv (und gleich voll gepollt).
     for key, node in nodes.items():
         if node["status"] == "entdeckt" and node["art"] == "switch" and node["ip"]:
-            probe = snmp_abfrage("snmpget", cfg.snmp_argumente(node["ip"]),
+            probe = snmp_abfrage("snmpget", cfg.snmp_zugang(node["ip"]),
                                  node["ip"], [OID["sysName"]], verbose)
             if probe is not None:
                 log(f"Neuer Switch eingebunden: {node['ip']} ({node.get('name') or key})")
@@ -1143,7 +1271,7 @@ def wlan_erkunden(cfg, unter_oid):
     else:
         basis, tiefe = cfg.ini["wlan"].get("basis_oid", ".1.3.6.1.4.1.4526.100.8"), 4
     log(f"Walke {basis} auf {ip} …")
-    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_argumente(ip), ip, [basis], verbose=True)
+    zeilen = snmp_abfrage("snmpbulkwalk", cfg.snmp_zugang(ip), ip, [basis], verbose=True)
     if not zeilen:
         sys.exit(f"FEHLER: {ip} liefert nichts unter {basis} "
                  f"(v2c-Community als [snmp:{ip}]-Abschnitt hinterlegt?).")
@@ -1179,6 +1307,11 @@ def main():
     parser.add_argument("--config", default=CONFIG_PFAD)
     args = parser.parse_args()
 
+    # Temporäre snmp.conf-Dateien auch bei SIGTERM (kill durch Admin o. Ä.)
+    # wegräumen: sys.exit löst die atexit-Aufräumung aus.
+    signal.signal(signal.SIGTERM, lambda _sig, _frame: sys.exit(143))
+    snmp_temp_reste_entfernen()
+
     cfg = Config(args.config)
     if args.init_db:
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
@@ -1195,4 +1328,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    finally:
+        snmp_temp_aufraeumen()

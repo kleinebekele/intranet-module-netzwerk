@@ -191,6 +191,44 @@ Adresse (Meldungsart `netzwerk-wlan-ohne-adresse`).
 danach `--init-db` (hängt die Spalte `ip` an Stage und Schnappschuss an und
 legt die Verlaufstabellen an).
 
+## Zugangsdaten nicht in der Prozessliste
+
+Bis Oktober 2026 standen SNMP-Passphrasen/Community und das MSSQL-Passwort als
+Kommandozeilen-Argumente (`-A`/`-X`/`-c`, `-P`) in den Aufrufen von
+`snmpget`/`snmpbulkwalk`, `tsql` und `freebcp` — per `ps` bzw.
+`/proc/<pid>/cmdline` für **jeden** lokalen Benutzer lesbar. Seitdem:
+
+- **SNMP:** Der Collector schreibt je Zugangsdatensatz (Standard `[snmp]`,
+  jede abweichende `[snmp:IP]`-Ausnahme) eine temporäre `snmp.conf`
+  (`defVersion`, `defSecurityName`, `defSecurityLevel`, `defAuthType`,
+  `defAuthPassphrase`, `defPrivType`, `defPrivPassphrase` bzw. bei v2c
+  `defCommunity`) in ein privates Verzeichnis `/tmp/netmon-snmp-XXXX/`
+  (0700, Dateien 0600) und übergibt es per Umgebungsvariable `SNMPCONFPATH`.
+  In argv stehen nur noch `-t`, `-r`, `-On`, IP und OIDs. Das Verzeichnis wird
+  am Laufende gelöscht (auch bei Fehler oder SIGTERM); Reste eines hart
+  abgebrochenen Laufs räumt der nächste Lauf nach 6 Stunden ab. Mit gesetztem
+  `SNMPCONFPATH` ignoriert net-snmp `~/.snmp/snmp.conf` — die bleibt nur für
+  Handtests (`snmpget <IP> …`) zuständig.
+- **MSSQL:** `tsql` und `freebcp` bekommen `-P -` und lesen das Passwort aus
+  der ersten stdin-Zeile (FreeTDS ab 1.1, Debian 12 liefert 1.3.17). Eine
+  Umgebungsvariable fürs Passwort kennt FreeTDS nicht. Passwort: max. 254
+  Zeichen, kein Zeilenumbruch.
+
+**Installieren muss man nichts** — es bleibt bei `snmp`, `freetds-bin`,
+`python3`. Update wie gewohnt: `netmon_collector.py` nach
+`/usr/local/sbin/` (`install -m 700 -o root -g root …`), kein `--init-db`
+nötig, kein Dienst-Neustart (Cron startet jeden Lauf neu).
+
+**Prüfen** (während ein Lauf aktiv ist, z. B. parallel zu
+`sudo /usr/local/sbin/netmon_collector.py --verbose`):
+
+```bash
+ps -eo args | grep -iE 'snmp|tsql|freebcp' | grep -v grep
+```
+
+zeigt kein Passwort/keine Community mehr (bei `tsql`/`freebcp` steht
+`-P -`). Nach dem Lauf ist `ls -d /tmp/netmon-snmp-*` leer.
+
 ## Fehlersuche
 
 - `FEHLER bei MERGE`/`freebcp` im Log → Zugangsdaten in `[mssql]` prüfen;
