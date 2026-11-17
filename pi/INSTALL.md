@@ -198,7 +198,7 @@ Sekundentakt meldet (Anmeldung, AP-Wechsel, Sperre wegen schwachem Signal),
 kommt nur per Syslog. `netmon_syslog.py` lauscht auf UDP 514 und schreibt jede
 Meldung mit Empfangszeit und Absender in eine Tagesdatei
 (`/var/log/netmon/syslog/netmon-syslog-JJJJ-MM-TT.log`, 14 Tage). Die
-Auswertung in die MSSQL folgt, sobald klar ist, was der Controller schickt.
+In die MSSQL bringt sie der Syslog-Import (Stufe 2, unten).
 
 ```bash
 sudo install -m 700 -o root -g root netmon_syslog.py /usr/local/sbin/netmon_syslog.py
@@ -223,7 +223,30 @@ eigenen DHCP-Servers (`dhcpd: …`). Die Client-Ereignisse (Load Balancing
 Alerts/Logs → Alarms die Stufen **Minor** und **Normal** auf „Add To Syslog“
 stehen. Sie erscheinen als `Alarm of Category: …, Severity: …, Descr: [...]`.
 Die Zeit im Text ist die Ortszeit des Controllers, die Empfangszeit davor die
-Uhr des Containers (dort UTC).
+Uhr des Containers (dort UTC). Major und Critical ebenfalls auf „Add To Syslog“
+stellen: Sie landen dann als Controller-Alarme auf der WLAN-Seite.
+
+## Syslog-Import (Stufe 2: Ereignisse in die MSSQL)
+
+`netmon_collector.py --syslog-import` liest die Tagesdateien ab der zuletzt
+gelesenen Stelle (`/var/lib/netmon/syslog_import.json`), zerlegt die Zeilen und
+lädt sie nach `network_wlan_ereignis` (60 Tage):
+Bad-RSSI-Abweisungen (Client, Signal, Schwelle, AP), alle übrigen
+Controller-Alarme (Kategorie, Stufe, Text) und das DHCP des Controllers
+(DISCOVER … ACK/NAK, verworfene Adressen). Die AP-MAC der Abweisungen wird
+über `/var/lib/netmon/wlan_aps.json` zum AP-Namen — die Datei schreibt der
+normale Sammellauf. Die Leseposition rückt nur nach erfolgreichem Upload vor.
+
+Einrichten (nach dem Update von `netmon_collector.py` und den SQL-Dateien):
+
+```bash
+sudo /usr/local/sbin/netmon_collector.py --init-db
+sudo install -m 644 netmon-syslog.cron.example /etc/cron.d/netmon-syslog
+```
+
+Der Cron-Eintrag enthält dann eine zweite Zeile: alle 5 Minuten (um 1 versetzt)
+den Import. Prüfen von Hand: `sudo /usr/local/sbin/netmon_collector.py
+--syslog-import --verbose`; Protokoll unter `/var/log/netmon/syslog-import.log`.
 
 ## Zugangsdaten nicht in der Prozessliste
 

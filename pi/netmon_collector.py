@@ -15,6 +15,7 @@ Aufrufe:
     netmon_collector.py            normaler Sammellauf (Cron)
     netmon_collector.py --verbose  gesprächiger Handlauf
     netmon_collector.py --init-db  legt die network_*-Tabellen einmalig an
+    netmon_collector.py --syslog-import  Syslog-Tagesdateien -> MSSQL (eigener Cron)
 """
 
 import argparse
@@ -22,6 +23,7 @@ import atexit
 import base64
 import collections
 import configparser
+import glob
 import json
 import os
 import re
@@ -1084,6 +1086,7 @@ def sammellauf(cfg, verbose):
             extra_links.append([treffer[1], treffer[2], c_key, "", "", ""])
         aps = wlan_tabelle(cfg, controller_ip, "aps", verbose)
         clients = wlan_tabelle(cfg, controller_ip, "clients", verbose)
+        ap_namen_sichern(cfg, aps)
         for ap in aps:
             verbunden = ap.get("status", "") == "Connected"
             key = next((k for k, n in nodes.items()
@@ -1291,6 +1294,167 @@ def wlan_erkunden(cfg, unter_oid):
     return 0
 
 
+# ------------------------------------------------- Syslog-Import (Phase 7) ---
+# netmon_syslog.py schreibt Rohzeilen "JJJJ-MM-TT HH:MM:SS<TAB>IP<TAB>Text"
+# (Empfangszeit in der Uhr des Containers). Der Text beginnt beim WC7500 mit
+# "<Mon TT HH:MM:SS n>" in Controller-Ortszeit — die nehmen wir, sie passt zu
+# SYSDATETIME() der MSSQL, mit der alle anderen network_*-Tabellen schreiben.
+SYSLOG_KOPF = re.compile(r'^<(\w{3})\s+(\d{1,2}) (\d{2}):(\d{2}):(\d{2})')
+SYSLOG_RSSI = re.compile(
+    r'Bad RSSI\] Event for Client ([0-9a-fA-F:]{17}) rssi (-?\d+) '
+    r'rssi_thresold (-?\d+) from AP ([0-9a-fA-F:]{17})')
+SYSLOG_ALARM = re.compile(
+    r'Alarm of Category: ([^,]*), Type: [^,]*, Severity: (\w+).*?Descr: \[?(.*?)\]?\.?\s*$')
+SYSLOG_DHCP = re.compile(
+    r'dhcpd: DHCP([A-Z]+)(?: (?:on|for) (\d+\.\d+\.\d+\.\d+))?(?: \([^)]*\))? '
+    r'(?:from|to) ([0-9a-fA-F:]{17})(?: \(([^)]*)\))? via vlan(\d+)(.*)$')
+SYSLOG_ABANDON = re.compile(r'dhcpd: Abandoning IP address (\d+\.\d+\.\d+\.\d+): (.*)$')
+MONATE = {m: i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+SYSLOG_STAGE_SPALTEN = ("am", "art", "mac", "rssi", "schwelle", "ap_mac", "ap_name",
+                        "ap_ip", "ip", "vlan", "name", "kategorie", "stufe", "text")
+
+
+def ap_namen_sichern(cfg, aps):
+    """AP-MAC -> Name/IP aus der Controller-Tabelle für den Syslog-Import
+    merken (der meldet nur die AP-MAC)."""
+    zuordnung = {ap["mac"]: {"name": ap.get("name", ""), "ip": ap.get("ip", "")}
+                 for ap in aps if ap.get("mac")}
+    if not zuordnung:
+        return
+    os.makedirs(cfg.state_dir, exist_ok=True)
+    with open(os.path.join(cfg.state_dir, "wlan_aps.json"), "w", encoding="utf-8") as f:
+        json.dump(zuordnung, f)
+
+
+def ap_finden(aps, mac):
+    """AP zu einer MAC aus dem Syslog: genau, sonst über die ersten fünf
+    Oktetten (Funk-BSSIDs unterscheiden sich meist nur im letzten) — aber
+    nur, wenn das eindeutig ist."""
+    if mac in aps:
+        return aps[mac]
+    treffer = [ap for m, ap in aps.items() if m[:14] == mac[:14]]
+    return treffer[0] if len(treffer) == 1 else {}
+
+
+def syslog_zeit(empfang, monat, tag, std, minute, sek):
+    """Controller-Zeit ohne Jahr -> 'JJJJ-MM-TT HH:MM:SS'. Das Jahr kommt aus
+    der Empfangszeit; um Silvester herum kann es eins daneben liegen."""
+    jahr = int(empfang[:4])
+    empf_monat = int(empfang[5:7])
+    if monat == 12 and empf_monat == 1:
+        jahr -= 1
+    elif monat == 1 and empf_monat == 12:
+        jahr += 1
+    return f"{jahr:04d}-{monat:02d}-{tag:02d} {std}:{minute}:{sek}"
+
+
+def syslog_zeile(zeile, aps):
+    """Eine Rohzeile -> Dict mit den Stage-Spalten, oder None (uninteressant)."""
+    teile = zeile.split("\t", 2)
+    if len(teile) != 3:
+        return None
+    empfang, _ip, text = teile
+    kopf = SYSLOG_KOPF.match(text)
+    if kopf and kopf.group(1) in MONATE:
+        am = syslog_zeit(empfang, MONATE[kopf.group(1)], int(kopf.group(2)),
+                         kopf.group(3), kopf.group(4), kopf.group(5))
+    else:
+        am = empfang[:19]
+
+    z = None
+    if (t := SYSLOG_RSSI.search(text)):
+        ap = ap_finden(aps, t.group(4).lower())
+        z = {"art": "rssi", "mac": t.group(1).lower(), "rssi": t.group(2),
+             "schwelle": t.group(3), "ap_mac": t.group(4).lower(),
+             "ap_name": ap.get("name"), "ap_ip": ap.get("ip"),
+             "kategorie": "Load Balancing", "stufe": "Normal"}
+    elif (t := SYSLOG_ALARM.search(text)):
+        z = {"art": "alarm", "kategorie": t.group(1).strip(), "stufe": t.group(2),
+             "text": t.group(3).strip()[:400]}
+        if (m := re.search(r'[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}', t.group(3))):
+            z["mac"] = m.group(0).lower()
+    elif (t := SYSLOG_DHCP.search(text)):
+        zusatz = t.group(6).strip().lstrip(":").strip()
+        z = {"art": t.group(1).lower()[:16], "ip": t.group(2), "mac": t.group(3).lower(),
+             "name": t.group(4), "vlan": t.group(5), "text": zusatz[:400] or None}
+    elif (t := SYSLOG_ABANDON.search(text)):
+        z = {"art": "abandon", "ip": t.group(1), "text": t.group(2).strip()[:400]}
+    if z is None:
+        return None
+    z["am"] = am
+    return z
+
+
+def syslog_import(cfg, verbose):
+    """Neue Zeilen der Syslog-Tagesdateien seit dem letzten Lauf in die
+    MSSQL laden (network_wlan_ereignis). Die Leseposition steht in
+    state_dir/syslog_import.json und rückt nur nach erfolgreichem Upload vor."""
+    log_dir = (cfg.ini["syslog"].get("log_dir", "/var/log/netmon/syslog")
+               if "syslog" in cfg.ini else "/var/log/netmon/syslog")
+    stand_pfad = os.path.join(cfg.state_dir, "syslog_import.json")
+    stand = {}
+    if os.path.exists(stand_pfad):
+        with open(stand_pfad, encoding="utf-8") as f:
+            stand = json.load(f)
+    aps = {}
+    aps_pfad = os.path.join(cfg.state_dir, "wlan_aps.json")
+    if os.path.exists(aps_pfad):
+        with open(aps_pfad, encoding="utf-8") as f:
+            aps = json.load(f)
+
+    dateien = sorted(os.path.basename(p) for p in
+                     glob.glob(os.path.join(log_dir, "netmon-syslog-*.log")))
+    dateien = [d for d in dateien if d >= stand.get("datei", "")]
+    zeilen, neuer_stand, gelesen = [], dict(stand), 0
+    for datei in dateien:
+        start = stand.get("pos", 0) if datei == stand.get("datei") else 0
+        with open(os.path.join(log_dir, datei), "rb") as f:
+            f.seek(start)
+            roh = f.read()
+        ende = roh.rfind(b"\n") + 1          # angefangene letzte Zeile bleibt liegen
+        for zeile in roh[:ende].decode("utf-8", errors="replace").splitlines():
+            gelesen += 1
+            z = syslog_zeile(zeile, aps)
+            if z is not None:
+                zeilen.append([z.get(s) for s in SYSLOG_STAGE_SPALTEN])
+        neuer_stand = {"datei": datei, "pos": start + ende}
+
+    if zeilen:
+        schema = cfg.mssql["schema"]
+        spalten = ", ".join(SYSLOG_STAGE_SPALTEN)
+        if not tsql_ausfuehren(cfg, f"USE [{cfg.mssql['database']}];\nGO\n"
+                                    f"TRUNCATE TABLE {schema}.network_wlan_ereignis_stage;",
+                               "Syslog-Staging leeren"):
+            return 1
+        csv_dir = os.path.join(cfg.state_dir, "csv")
+        os.makedirs(csv_dir, exist_ok=True)
+        pfad = os.path.join(csv_dir, "network_wlan_ereignis_stage.csv")
+        csv_schreiben(pfad, zeilen)
+        if not freebcp_hochladen(cfg, "network_wlan_ereignis_stage", pfad):
+            return 1
+        if not tsql_ausfuehren(cfg, f"USE [{cfg.mssql['database']}];\nGO\n"
+                f"INSERT INTO {schema}.network_wlan_ereignis ({spalten})\n"
+                f"SELECT TRY_CONVERT(datetime2(0), am, 120), art, NULLIF(mac, ''),\n"
+                f"       TRY_CONVERT(smallint, rssi), TRY_CONVERT(smallint, schwelle),\n"
+                f"       NULLIF(ap_mac, ''), NULLIF(ap_name, ''), NULLIF(ap_ip, ''), NULLIF(ip, ''),\n"
+                f"       TRY_CONVERT(smallint, vlan), NULLIF(name, ''), NULLIF(kategorie, ''),\n"
+                f"       NULLIF(stufe, ''), NULLIF(text, '')\n"
+                f"FROM {schema}.network_wlan_ereignis_stage\n"
+                f"WHERE TRY_CONVERT(datetime2(0), am, 120) IS NOT NULL AND NULLIF(art, '') IS NOT NULL;\n"
+                f"DELETE FROM {schema}.network_wlan_ereignis WHERE am < DATEADD(day, -60, SYSDATETIME());",
+                "Syslog-Ereignisse übernehmen"):
+            return 1
+
+    if neuer_stand != stand:
+        os.makedirs(cfg.state_dir, exist_ok=True)
+        with open(stand_pfad, "w", encoding="utf-8") as f:
+            json.dump(neuer_stand, f)
+    if verbose or zeilen:
+        log(f"Syslog-Import: {gelesen} Zeilen gelesen, {len(zeilen)} Ereignisse übernommen.")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="netmon-Collector (Phase 2+3)")
     parser.add_argument("--verbose", action="store_true", help="gesprächiger Handlauf")
@@ -1304,6 +1468,8 @@ def main():
                         metavar="PFAD",
                         help="OPNsense-API-Endpunkte fuer Interface-Traffic durchprobieren; "
                              "mit Pfad-Argument: nur diesen, dafuer ausfuehrlicher")
+    parser.add_argument("--syslog-import", action="store_true",
+                        help="neue Syslog-Zeilen (netmon_syslog.py) in die MSSQL laden")
     parser.add_argument("--config", default=CONFIG_PFAD)
     args = parser.parse_args()
 
@@ -1317,9 +1483,12 @@ def main():
         ok = all(tsql_ausfuehren(cfg, sql_datei(cfg, name), f"Tabellen anlegen ({name})")
                  for name in ("schema_phase2.sql", "schema_phase3.sql",
                               "schema_phase4.sql", "schema_phase5.sql",
-                              "schema_vlan.sql", "schema_phase6.sql"))
+                              "schema_vlan.sql", "schema_phase6.sql",
+                              "schema_phase7.sql"))
         log("Tabellen angelegt bzw. vorhanden." if ok else "Anlegen fehlgeschlagen.")
         return 0 if ok else 1
+    if args.syslog_import:
+        return syslog_import(cfg, args.verbose)
     if args.wlan_erkunden is not None:
         return wlan_erkunden(cfg, args.wlan_erkunden)
     if args.opnsense_erkunden is not None:

@@ -7,7 +7,7 @@ Lauscht per UDP (Standard 514) und schreibt jede Meldung mit Empfangszeit und
 Absender-IP in eine Tagesdatei unter log_dir (netmon-syslog-JJJJ-MM-TT.log).
 Zweck: sehen, was der WLAN-Controller an Client-Ereignissen schickt
 (Anmeldung, AP-Wechsel, Sperre) — mit Sekunden, die der 5-Minuten-Collector
-nicht sieht. Die Auswertung in die MSSQL folgt, sobald das Format bekannt ist.
+nicht sieht. In die MSSQL lädt sie `netmon_collector.py --syslog-import`.
 
 Ohne Dienst-Manager: Cron startet das Skript jede Minute über `flock -n`.
 Läuft schon eins, endet der neue Aufruf sofort; nach Absturz oder Neustart

@@ -3,3 +3,5 @@
 # Empfänger schon läuft. Nach Absturz oder Neustart ist er so binnen einer Minute zurück.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 * * * * * root flock -n /run/netmon-syslog.lock /usr/local/sbin/netmon_syslog.py >> /var/log/netmon/syslog-empfang.log 2>&1
+# Stufe 2: neue Zeilen alle 5 Minuten in die MSSQL (versetzt zum Sammellauf auf 2/7/12/...).
+1-59/5 * * * * root flock -n /run/netmon-syslog-import.lock /usr/local/sbin/netmon_collector.py --syslog-import >> /var/log/netmon/syslog-import.log 2>&1
