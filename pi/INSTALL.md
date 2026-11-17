@@ -217,6 +217,14 @@ Prüfen: `netmon_syslog.py --test` schickt eine Probemeldung an den eigenen Port
 Am Controller: Syslog an, Ziel = IP dieses Containers, Port 514. Die Firewall
 muss UDP 514 vom Controller zum Container durchlassen.
 
+Netgear WC7500: Von selbst schickt er per Syslog nur die Meldungen seines
+eigenen DHCP-Servers (`dhcpd: …`). Die Client-Ereignisse (Load Balancing
+„Bad RSSI“, Blacklist, Assoc) kommen erst, wenn unter Configuration → System →
+Alerts/Logs → Alarms die Stufen **Minor** und **Normal** auf „Add To Syslog“
+stehen. Sie erscheinen als `Alarm of Category: …, Severity: …, Descr: [...]`.
+Die Zeit im Text ist die Ortszeit des Controllers, die Empfangszeit davor die
+Uhr des Containers (dort UTC).
+
 ## Zugangsdaten nicht in der Prozessliste
 
 Bis Oktober 2026 standen SNMP-Passphrasen/Community und das MSSQL-Passwort als
