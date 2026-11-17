@@ -191,6 +191,32 @@ Adresse (Meldungsart `netzwerk-wlan-ohne-adresse`).
 danach `--init-db` (hängt die Spalte `ip` an Stage und Schnappschuss an und
 legt die Verlaufstabellen an).
 
+## Syslog-Empfang (Stufe 1: Rohmitschnitt)
+
+Der Collector sieht nur alle 5 Minuten hin. Was der WLAN-Controller im
+Sekundentakt meldet (Anmeldung, AP-Wechsel, Sperre wegen schwachem Signal),
+kommt nur per Syslog. `netmon_syslog.py` lauscht auf UDP 514 und schreibt jede
+Meldung mit Empfangszeit und Absender in eine Tagesdatei
+(`/var/log/netmon/syslog/netmon-syslog-JJJJ-MM-TT.log`, 14 Tage). Die
+Auswertung in die MSSQL folgt, sobald klar ist, was der Controller schickt.
+
+```bash
+sudo install -m 700 -o root -g root netmon_syslog.py /usr/local/sbin/netmon_syslog.py
+sudo install -m 644 netmon-syslog.cron.example /etc/cron.d/netmon-syslog
+```
+
+Kein Dienst: Cron versucht jede Minute einen Start, `flock -n` lässt ihn
+sofort enden, solange der Empfänger läuft. Optional in `/etc/netmon/netmon.conf`
+den Abschnitt `[syslog]` setzen (`erlaubt` = IP des Controllers, damit nur er
+mitgeschrieben wird). Danach den Empfänger einmal beenden
+(`pkill -f netmon_syslog.py`), Cron startet ihn mit der neuen Konfiguration.
+
+Prüfen: `netmon_syslog.py --test` schickt eine Probemeldung an den eigenen Port
+(nur sichtbar, wenn `127.0.0.1` erlaubt ist oder `erlaubt` fehlt);
+`tail -f /var/log/netmon/syslog/netmon-syslog-$(date +%F).log`.
+Am Controller: Syslog an, Ziel = IP dieses Containers, Port 514. Die Firewall
+muss UDP 514 vom Controller zum Container durchlassen.
+
 ## Zugangsdaten nicht in der Prozessliste
 
 Bis Oktober 2026 standen SNMP-Passphrasen/Community und das MSSQL-Passwort als

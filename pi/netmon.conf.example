@@ -65,6 +65,14 @@ stumm_nach_fehlversuchen = 3
 # NICHT die OPNsense). Leer/weggelassen = System-Resolver des Pi.
 # server = 10.10.0.XX
 
+[syslog]
+# Syslog-Empfang (netmon_syslog.py, eigener Cron). Fehlt der Abschnitt, gelten
+# die Standardwerte unten und JEDER Absender wird mitgeschrieben.
+# port = 514
+# erlaubt = 10.10.0.181, 127.0.0.1
+# log_dir = /var/log/netmon/syslog
+# tage = 14
+
 [mssql]
 # Zielserver — Werte wie in netscan.sh. `server` ist das, was dort bei
 # freebcp/tsql hinter -S bzw. -H steht (IP oder freetds.conf-Eintrag).

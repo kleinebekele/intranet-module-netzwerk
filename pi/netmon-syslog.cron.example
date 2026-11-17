@@ -1,0 +1,5 @@
+# /etc/cron.d/netmon-syslog — hält den Syslog-Empfang am Laufen.
+# Jede Minute ein Startversuch; flock -n lässt ihn sofort enden, solange der
+# Empfänger schon läuft. Nach Absturz oder Neustart ist er so binnen einer Minute zurück.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+* * * * * root flock -n /run/netmon-syslog.lock /usr/local/sbin/netmon_syslog.py >> /var/log/netmon/syslog-empfang.log 2>&1
