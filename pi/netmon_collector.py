@@ -1435,13 +1435,17 @@ def syslog_import(cfg, verbose):
             return 1
         if not tsql_ausfuehren(cfg, f"USE [{cfg.mssql['database']}];\nGO\n"
                 f"INSERT INTO {schema}.network_wlan_ereignis ({spalten})\n"
-                f"SELECT TRY_CONVERT(datetime2(0), am, 120), art, NULLIF(mac, ''),\n"
-                f"       TRY_CONVERT(smallint, rssi), TRY_CONVERT(smallint, schwelle),\n"
+                # Kein TRY_CONVERT: die LINEAR-DB läuft im Kompatibilitätsgrad
+                # vor SQL 2012 (Msg 195). Die Zahlenfelder kommen aus den
+                # Regex-Gruppen (nur Ziffern/Minus); die Zeit prüft das LIKE.
+                f"SELECT CONVERT(datetime2(0), am, 120), art, NULLIF(mac, ''),\n"
+                f"       CONVERT(smallint, NULLIF(rssi, '')), CONVERT(smallint, NULLIF(schwelle, '')),\n"
                 f"       NULLIF(ap_mac, ''), NULLIF(ap_name, ''), NULLIF(ap_ip, ''), NULLIF(ip, ''),\n"
-                f"       TRY_CONVERT(smallint, vlan), NULLIF(name, ''), NULLIF(kategorie, ''),\n"
+                f"       CONVERT(smallint, NULLIF(vlan, '')), NULLIF(name, ''), NULLIF(kategorie, ''),\n"
                 f"       NULLIF(stufe, ''), NULLIF(text, '')\n"
                 f"FROM {schema}.network_wlan_ereignis_stage\n"
-                f"WHERE TRY_CONVERT(datetime2(0), am, 120) IS NOT NULL AND NULLIF(art, '') IS NOT NULL;\n"
+                f"WHERE am LIKE '[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9]'\n"
+                f"  AND NULLIF(art, '') IS NOT NULL;\n"
                 f"DELETE FROM {schema}.network_wlan_ereignis WHERE am < DATEADD(day, -60, SYSDATETIME());",
                 "Syslog-Ereignisse übernehmen"):
             return 1
