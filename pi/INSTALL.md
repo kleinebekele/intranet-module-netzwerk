@@ -230,7 +230,7 @@ stellen: Sie landen dann als Controller-Alarme auf der WLAN-Seite.
 
 `netmon_collector.py --syslog-import` liest die Tagesdateien ab der zuletzt
 gelesenen Stelle (`/var/lib/netmon/syslog_import.json`), zerlegt die Zeilen und
-lädt sie nach `network_wlan_ereignis` (60 Tage):
+lädt sie nach `network_wlan_ereignis` (60 Tage, Abweisungen wegen schwachen Signals nur 24 Stunden):
 Bad-RSSI-Abweisungen (Client, Signal, Schwelle, AP), alle übrigen
 Controller-Alarme (Kategorie, Stufe, Text) und das DHCP des Controllers
 (DISCOVER … ACK/NAK, verworfene Adressen). Die AP-MAC der Abweisungen wird

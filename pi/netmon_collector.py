@@ -1446,7 +1446,10 @@ def syslog_import(cfg, verbose):
                 f"FROM {schema}.network_wlan_ereignis_stage\n"
                 f"WHERE am LIKE '[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9]'\n"
                 f"  AND NULLIF(art, '') IS NOT NULL;\n"
-                f"DELETE FROM {schema}.network_wlan_ereignis WHERE am < DATEADD(day, -60, SYSDATETIME());",
+                # Abweisungen (rssi) sind nach einem Tag uninteressant und die
+                # weitaus meisten Zeilen; alles andere bleibt 60 Tage.
+                f"DELETE FROM {schema}.network_wlan_ereignis WHERE am < DATEADD(day, -60, SYSDATETIME())\n"
+                f"   OR (art = 'rssi' AND am < DATEADD(hour, -24, SYSDATETIME()));",
                 "Syslog-Ereignisse übernehmen"):
             return 1
 
